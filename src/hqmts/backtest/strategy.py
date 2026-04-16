@@ -9,7 +9,8 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from hqmts.backtest.context import StrategyContext
-from hqmts.core.enums import Cycle, SignalType, TargetDirection
+from hqmts.backtest.order import BacktestOrder
+from hqmts.core.enums import Cycle, Side, SignalType, TargetDirection
 from hqmts.core.types import DecisionSnapshotId, InstrumentId, SignalId, StrategyInstanceId, VersionStr
 from hqmts.domain.bar import Bar
 from hqmts.domain.signal import Signal
@@ -43,6 +44,26 @@ class StrategyTemplate(ABC):
     def generate_signal(self, context: StrategyContext) -> Signal | None:
         """Produce a trading signal or None."""
         ...
+
+    def generate_orders(self, context: StrategyContext) -> list[BacktestOrder]:
+        """Produce orders for the current bar.
+
+        Default implementation delegates to generate_signal() and wraps
+        the result in a BacktestOrder. Override for richer order types,
+        stop-loss, take-profit, or multi-order output.
+        """
+        signal = self.generate_signal(context)
+        if signal is None:
+            return []
+        side = Side.BUY if signal.signal_type in (SignalType.OPEN_LONG, SignalType.CLOSE_SHORT) else Side.SELL
+        return [BacktestOrder(
+            instrument_id=str(signal.instrument_id),
+            side=side,
+            quantity=0,
+            order_type="market",
+            signal_id=str(signal.signal_id),
+            reason_code=signal.reason_code or "",
+        )]
 
     def on_order_update(self, order_state: str, context: StrategyContext) -> None:
         """Notification of order state change. Default no-op."""

@@ -20,11 +20,25 @@ class Position:
     today_bought: int = 0
     average_cost: Decimal = Decimal("0")
     market_value: Decimal = Decimal("0")
+    stop_loss: Decimal | None = None
+    take_profit: Decimal | None = None
 
     @property
     def sellable(self) -> int:
         """Shares available to sell (T+1 rule)."""
         return self.quantity - self.today_bought
+
+    def check_stop_loss(self, current_price: Decimal) -> bool:
+        """Check if stop-loss is triggered at current price."""
+        if self.stop_loss is not None and self.quantity > 0 and current_price <= self.stop_loss:
+            return True
+        return False
+
+    def check_take_profit(self, current_price: Decimal) -> bool:
+        """Check if take-profit is triggered at current price."""
+        if self.take_profit is not None and self.quantity > 0 and current_price >= self.take_profit:
+            return True
+        return False
 
 
 @dataclass
@@ -134,6 +148,34 @@ class PortfolioState:
         """Calculate total asset value (cash + positions market value)."""
         mv = sum(pos.market_value for pos in self.positions.values())
         return self.cash + mv
+
+    def update_stop_loss_take_profit(
+        self, instrument_id: str, stop_loss: Decimal | None, take_profit: Decimal | None
+    ) -> None:
+        """Set stop-loss and/or take-profit for a position."""
+        pos = self.get_or_create_position(instrument_id)
+        if stop_loss is not None:
+            pos.stop_loss = stop_loss
+        if take_profit is not None:
+            pos.take_profit = take_profit
+
+    def check_stop_loss_triggers(self, price_map: dict[str, Decimal]) -> list[str]:
+        """Return instrument_ids whose stop-loss is triggered at current prices."""
+        triggered: list[str] = []
+        for iid, pos in self.positions.items():
+            price = price_map.get(iid)
+            if price is not None and pos.check_stop_loss(price):
+                triggered.append(iid)
+        return triggered
+
+    def check_take_profit_triggers(self, price_map: dict[str, Decimal]) -> list[str]:
+        """Return instrument_ids whose take-profit is triggered at current prices."""
+        triggered: list[str] = []
+        for iid, pos in self.positions.items():
+            price = price_map.get(iid)
+            if price is not None and pos.check_take_profit(price):
+                triggered.append(iid)
+        return triggered
 
     def reset_daily_state(self) -> None:
         """Reset T+1 tracking at start of new trading day."""

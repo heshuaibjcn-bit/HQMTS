@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Sequence
 
 from hqmts.backtest.cost import CostModel, PriceLimitRule
+from hqmts.backtest.order import BacktestOrder
 from hqmts.core.enums import Side, SignalType
 from hqmts.domain.bar import Bar
 from hqmts.domain.instrument import Instrument
@@ -146,6 +147,83 @@ class BacktestMatcher:
     def _round_to_lot(self, quantity: int) -> int:
         """Round quantity down to nearest lot_size."""
         return (quantity // self._lot_size) * self._lot_size
+
+    def match_order_from_bt(
+        self,
+        order: BacktestOrder,
+        target_bar: Bar,
+        prev_close: Decimal,
+        instrument: Instrument,
+        current_position: int,
+        today_bought: int,
+        available_cash: Decimal,
+    ) -> MatchResult:
+        """Match a BacktestOrder against a target bar.
+
+        Handles quantity=0 (all available for sells), limit orders,
+        and delegates cost calculation to CostModel.
+        """
+        # Limit order check
+        if order.order_type == "limit" and order.limit_price is not None:
+            if order.side == Side.BUY and target_bar.open > order.limit_price:
+                return MatchResult(filled=False, reject_reason="limit_price_not_reached")
+            if order.side == Side.SELL and target_bar.open < order.limit_price:
+                return MatchResult(filled=False, reject_reason="limit_price_not_reached")
+
+        # Fill price
+        fill_price = target_bar.open
+        if order.side == Side.BUY:
+            fill_price += self._cost_model.slippage
+        else:
+            fill_price -= self._cost_model.slippage
+
+        # Price limit check
+        is_st = getattr(instrument, "is_st", False)
+        board_type = getattr(instrument, "board_type", "main")
+        if not self._price_limit.is_within_limit(fill_price, prev_close, is_st, board_type):
+            return MatchResult(filled=False, reject_reason="price_limit_hit")
+
+        # Zero volume bar
+        if target_bar.volume <= 0:
+            return MatchResult(filled=False, reject_reason="zero_volume")
+
+        # Quantity calculation
+        if order.side == Side.BUY:
+            max_by_cash = int(available_cash / fill_price) if fill_price > 0 else 0
+            max_by_volume = int(target_bar.volume * self._participation_rate)
+            if order.quantity > 0:
+                raw_quantity = min(order.quantity, max_by_cash, max_by_volume)
+            else:
+                raw_quantity = min(max_by_cash, max_by_volume)
+        else:
+            # SELL
+            sellable = current_position - today_bought
+            max_by_volume = int(target_bar.volume * self._participation_rate)
+            if order.quantity > 0:
+                raw_quantity = min(order.quantity, sellable, max_by_volume)
+            else:
+                # quantity=0 means sell all available
+                raw_quantity = min(sellable, max_by_volume)
+
+        quantity = self._round_to_lot(raw_quantity)
+
+        if quantity <= 0:
+            if order.side == Side.SELL and (current_position - today_bought) <= 0:
+                return MatchResult(filled=False, reject_reason="t_plus_1_blocked")
+            return MatchResult(filled=False, reject_reason="insufficient_funds_or_volume")
+
+        # Calculate costs
+        trade_amount = fill_price * Decimal(quantity)
+        commission = self._cost_model.calculate_commission(trade_amount)
+        stamp_tax = self._cost_model.calculate_stamp_tax(trade_amount, order.side)
+
+        return MatchResult(
+            filled=True,
+            fill_price=fill_price,
+            fill_quantity=quantity,
+            commission=commission,
+            stamp_tax=stamp_tax,
+        )
 
     @staticmethod
     def _signal_to_side(signal_type: SignalType) -> Side | None:
