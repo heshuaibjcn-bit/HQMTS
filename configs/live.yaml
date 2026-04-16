@@ -1,0 +1,17 @@
+environment: "live"
+
+logging:
+  level: "WARNING"
+  format: "json"
+
+database:
+  pool_size: 20
+  max_overflow: 40
+  echo: false
+
+agent:
+  enabled: true
+  tool_gateway_enabled: true
+  max_concurrent_tasks: 3
+  task_timeout_seconds: 120
+  live_fail_closed: true

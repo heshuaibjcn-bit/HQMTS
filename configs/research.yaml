@@ -1,0 +1,11 @@
+environment: "research"
+
+logging:
+  level: "DEBUG"
+
+database:
+  echo: true
+
+agent:
+  enabled: true
+  tool_gateway_enabled: true

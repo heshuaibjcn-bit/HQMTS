@@ -1,0 +1,8 @@
+environment: "paper"
+
+logging:
+  level: "INFO"
+
+agent:
+  enabled: true
+  tool_gateway_enabled: true

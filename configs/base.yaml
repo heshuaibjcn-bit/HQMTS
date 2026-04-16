@@ -1,0 +1,59 @@
+# HQMTS Base Configuration
+# Environment-specific configs overlay these values
+
+app:
+  name: "HQMTS"
+  version: "0.1.0"
+
+environment: "research"  # research | backtest | paper | live
+
+database:
+  url: "postgresql+asyncpg://hqmts:hqmts@localhost:5432/hqmts"
+  pool_size: 10
+  max_overflow: 20
+  echo: false
+
+redis:
+  url: "redis://localhost:6379/0"
+  pool_size: 10
+
+logging:
+  level: "INFO"
+  format: "json"  # json | text
+
+# A股交易规则
+market:
+  timezone: "Asia/Shanghai"
+  morning_open: "09:30"
+  morning_close: "11:30"
+  afternoon_open: "13:00"
+  afternoon_close: "15:00"
+  lot_size: 100
+  stamp_tax_rate: 0.001      # 印花税率 (卖出)
+  commission_rate: 0.0003    # 佣金率 (买卖)
+  commission_min: 5.0        # 最低佣金
+  slippage_default: 0.0      # 默认滑点
+
+# 风控默认配置
+risk:
+  max_position_ratio: 0.95       # 最大总仓位比例
+  daily_loss_limit: 0.03         # 单日亏损上限
+  intraday_drawdown_limit: 0.02  # 日内回撤上限
+  min_available_cash: 10000.0    # 最低可用资金
+  single_instrument_max_ratio: 0.20  # 单标的最大持仓比例
+  order_frequency_limit_per_min: 10  # 每分钟最大下单频率
+
+# 数据配置
+data:
+  bar_cycles: ["1m", "5m", "15m", "30m", "60m"]
+  primary_cycle: "1m"
+  stale_price_threshold_seconds: 30
+  data_quality_check: true
+
+# Agent 配置
+agent:
+  enabled: false
+  tool_gateway_enabled: false
+  max_concurrent_tasks: 5
+  task_timeout_seconds: 300
+  live_fail_closed: true
