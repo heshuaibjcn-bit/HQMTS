@@ -45,6 +45,10 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
+    # Prefer the URL set in alembic.ini or via command-line config
+    ini_url = config.get_main_option("sqlalchemy.url")
+    if ini_url:
+        return ini_url
     settings = load_settings()
     return settings.database.url
 

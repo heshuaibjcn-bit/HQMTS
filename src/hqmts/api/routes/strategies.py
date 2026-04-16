@@ -2,12 +2,34 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hqmts.api.deps import get_db
+from hqmts.db.models.strategy import StrategyORM, StrategyInstanceORM
+from hqmts.db.repositories.base import BaseRepository
 
 router = APIRouter(prefix="/strategies", tags=["strategies"])
+
+
+def _strategy_to_dict(s: StrategyORM) -> dict:
+    return {
+        "strategy_id": s.strategy_id,
+        "name": s.name,
+        "version": s.version,
+        "description": s.description,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+    }
+
+
+def _instance_to_dict(i: StrategyInstanceORM) -> dict:
+    return {
+        "strategy_instance_id": i.strategy_instance_id,
+        "strategy_id": i.strategy_id,
+        "status": i.status,
+        "environment": i.environment,
+        "created_at": i.created_at.isoformat() if i.created_at else None,
+    }
 
 
 @router.get("/")
@@ -17,13 +39,23 @@ async def list_strategies(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List strategies."""
-    return {"strategies": [], "total": 0}
+    repo = BaseRepository(StrategyORM, db)
+    filters: dict = {}
+    if status:
+        filters["status"] = status
+    strategies = await repo.get_many(filters=filters or None, limit=limit)
+    total = await repo.count(filters=filters or None)
+    return {"strategies": [_strategy_to_dict(s) for s in strategies], "total": total}
 
 
 @router.get("/{strategy_id}")
 async def get_strategy(strategy_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Get strategy details."""
-    return {"strategy_id": strategy_id}
+    repo = BaseRepository(StrategyORM, db)
+    strategy = await repo.get_by_id(strategy_id, id_column="strategy_id")
+    if strategy is None:
+        raise HTTPException(status_code=404, detail="Strategy not found")
+    return _strategy_to_dict(strategy)
 
 
 @router.get("/{strategy_id}/instances")
@@ -33,4 +65,9 @@ async def list_strategy_instances(
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """List running instances of a strategy."""
-    return {"instances": []}
+    repo = BaseRepository(StrategyInstanceORM, db)
+    filters: dict = {"strategy_id": strategy_id}
+    if environment:
+        filters["environment"] = environment
+    instances = await repo.get_many(filters=filters, limit=100)
+    return {"instances": [_instance_to_dict(i) for i in instances]}

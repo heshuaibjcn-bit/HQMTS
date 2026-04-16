@@ -40,7 +40,13 @@ def setup_logging(level: str = "INFO", fmt: str = "json") -> None:
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, level.upper(), logging.INFO))
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(structlog.stdlib.ProcessorFormatter())
+    handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processor=structlog.dev.ConsoleRenderer()
+            if fmt == "text"
+            else structlog.processors.JSONRenderer(),
+        )
+    )
     root_logger.handlers.clear()
     root_logger.addHandler(handler)
 

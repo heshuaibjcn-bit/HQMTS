@@ -77,13 +77,17 @@ class ReservationManager:
         Raises:
             InsufficientFundsError: If not enough available cash.
         """
-        if available_cash is not None:
-            total_reserved = await self._repo.get_total_reserved_amount(account_id)
-            effective = available_cash - total_reserved
-            if amount > effective:
-                raise InsufficientFundsError(
-                    f"Requested {amount}, effective available {effective}"
-                )
+        if available_cash is None:
+            raise ValueError(
+                "available_cash must be provided for sufficiency check. "
+                "Use get_effective_available_cash() to calculate it first."
+            )
+        total_reserved = await self._repo.get_total_reserved_amount(account_id)
+        effective = available_cash - total_reserved
+        if amount > effective:
+            raise InsufficientFundsError(
+                f"Requested {amount}, effective available {effective}"
+            )
 
         now = datetime.now()
         reservation = CashReservation(

@@ -58,6 +58,23 @@ class DataConfig(BaseSettings):
     data_quality_check: bool = True
 
 
+class TushareConfig(BaseSettings):
+    api_token: str = ""
+    rate_limit_per_minute: int = 200
+    retry_max_attempts: int = 3
+    retry_delay_seconds: float = 0.5
+    cache_dir: str = ".tushare_cache"
+
+
+class BacktestSettings(BaseSettings):
+    initial_cash: float = 1_000_000.0
+    commission_rate: float = 0.0003
+    commission_min: float = 5.0
+    stamp_tax_rate: float = 0.001
+    slippage: float = 0.0
+    participation_rate: float = 0.25
+
+
 class AgentConfig(BaseSettings):
     enabled: bool = False
     tool_gateway_enabled: bool = False
@@ -80,6 +97,8 @@ class Settings(BaseSettings):
     market: MarketConfig = MarketConfig()
     risk: RiskConfig = RiskConfig()
     data: DataConfig = DataConfig()
+    tushare: TushareConfig = TushareConfig()
+    backtest: BacktestSettings = BacktestSettings()
     agent: AgentConfig = AgentConfig()
 
 

@@ -1,10 +1,10 @@
-"""Agent governance service orchestrating Proposal → Approval → Execution.
+"""Agent governance service orchestrating Proposal -> Approval -> Execution.
 
 Implements the full governance chain from SAD 24:
 1. Agent creates a Proposal via AgentTask
 2. Policy Engine evaluates the proposal
-3. If manual_review_required → create ApprovalRequest
-4. If approved (or auto-approved) → create ControlledExecution
+3. If manual_review_required -> create ApprovalRequest
+4. If approved (or auto-approved) -> create ControlledExecution
 5. ControlledExecution tracks the execution outcome
 """
 
@@ -13,10 +13,9 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from hqmts.core.enums import (
     AgentTaskStatus,
+    AgentRole,
     ApprovalStatus,
     Environment,
     ExecutionStatus,
@@ -27,31 +26,50 @@ from hqmts.core.exceptions import (
     AgentPermissionDeniedError,
     PolicyViolationError,
 )
+from hqmts.core.types import (
+    AgentTaskId,
+    ApprovalRequestId,
+    ControlledExecutionId,
+    ProposalId,
+)
 from hqmts.agent.gateway import ToolCallRequest, ToolCallResult, ToolGateway
 from hqmts.agent.policy import PolicyCheckInput, PolicyEngine
-from hqmts.db.models.agent_proposal import AgentProposalORM
-from hqmts.db.models.agent_task import AgentTaskORM
-from hqmts.db.models.approval_request import ApprovalRequestORM
-from hqmts.db.models.controlled_execution import ControlledExecutionORM
-from hqmts.db.repositories.base import BaseRepository
+from hqmts.db.repositories.agent_repos import (
+    AgentProposalRepository,
+    AgentTaskRepository,
+    ApprovalRequestRepository,
+    ControlledExecutionRepository,
+)
+from hqmts.domain.agent_proposal import AgentProposal
+from hqmts.domain.agent_task import AgentTask
+from hqmts.domain.approval_request import ApprovalRequest
+from hqmts.domain.controlled_execution import ControlledExecution
 
 
 class AgentGovernanceService:
-    """Full lifecycle: AgentTask → Proposal → Approval → Execution.
+    """Full lifecycle: AgentTask -> Proposal -> Approval -> Execution.
 
     This service enforces that NO Agent action directly modifies
     core trading state. All mutations go through the governance chain.
+
+    All public methods return Pydantic domain models, not ORM objects.
     """
 
-    def __init__(self, session: AsyncSession, policy_engine: PolicyEngine) -> None:
-        self._session = session
+    def __init__(
+        self,
+        task_repo: AgentTaskRepository,
+        proposal_repo: AgentProposalRepository,
+        approval_repo: ApprovalRequestRepository,
+        execution_repo: ControlledExecutionRepository,
+        policy_engine: PolicyEngine,
+    ) -> None:
+        self._task_repo = task_repo
+        self._proposal_repo = proposal_repo
+        self._approval_repo = approval_repo
+        self._execution_repo = execution_repo
         self._policy_engine = policy_engine
-        self._task_repo = BaseRepository(AgentTaskORM, session)
-        self._proposal_repo = BaseRepository(AgentProposalORM, session)
-        self._approval_repo = BaseRepository(ApprovalRequestORM, session)
-        self._execution_repo = BaseRepository(ControlledExecutionORM, session)
 
-    # ── Step 1: Create AgentTask ───────────────────────────────────────────
+    # -- Step 1: Create AgentTask ------------------------------------------
 
     async def create_task(
         self,
@@ -63,36 +81,34 @@ class AgentGovernanceService:
         workflow_version: str = "v1",
         tool_plan: str = "[]",
         correlation_id: str | None = None,
-    ) -> AgentTaskORM:
-        """Create a new agent task."""
+    ) -> AgentTask:
+        """Create a new agent task. Returns domain model."""
         now = datetime.now()
-        task = AgentTaskORM(
-            agent_task_id=str(uuid.uuid4()),
+        task = AgentTask(
+            agent_task_id=AgentTaskId(str(uuid.uuid4())),
             agent_role=agent_role,
             task_type=task_type,
-            environment=environment,
+            environment=Environment(environment),
             input_ref=input_ref,
             workflow_version=workflow_version,
             tool_plan=tool_plan,
-            status=AgentTaskStatus.CREATED.value,
+            status=AgentTaskStatus.CREATED,
             triggered_by=triggered_by,
             correlation_id=correlation_id,
-            started_at=now,
             created_at=now,
-            updated_at=now,
         )
-        return await self._task_repo.create(task)
+        return await self._task_repo.create_domain(task)
 
-    async def start_task(self, task_id: str) -> AgentTaskORM:
-        """Transition task to running."""
-        task = await self._task_repo.get_by_id(task_id, id_column="agent_task_id")
+    async def start_task(self, task_id: str) -> AgentTask:
+        """Transition task to running. Returns domain model."""
+        task = await self._task_repo.get_domain(task_id)
         if task is None:
             raise ValueError(f"Task {task_id} not found")
-        task.status = AgentTaskStatus.RUNNING.value
-        task.updated_at = datetime.now()
-        return await self._task_repo.update(task)
+        task.status = AgentTaskStatus.RUNNING
+        task.started_at = datetime.now()
+        return await self._task_repo.update_domain(task)
 
-    # ── Step 2: Create Proposal ────────────────────────────────────────────
+    # -- Step 2: Create Proposal -------------------------------------------
 
     async def create_proposal(
         self,
@@ -102,30 +118,28 @@ class AgentGovernanceService:
         target_object_id: str,
         proposal_payload: str = "{}",
         confidence: float = 0.0,
-    ) -> AgentProposalORM:
+    ) -> AgentProposal:
         """Create a proposal from a running agent task.
 
         Validates: task must be in a state that can produce proposals.
+        Returns domain model.
         """
-        task = await self._task_repo.get_by_id(agent_task_id, id_column="agent_task_id")
+        task = await self._task_repo.get_domain(agent_task_id)
         if task is None:
             raise ValueError(f"Task {agent_task_id} not found")
 
-        if task.status not in (
-            AgentTaskStatus.RUNNING.value,
-            AgentTaskStatus.WAITING_TOOL.value,
-        ):
+        if not task.can_produce_proposals():
             raise AgentPermissionDeniedError(
                 agent_role=task.agent_role,
                 tool_name="create_proposal",
-                reason=f"Task {agent_task_id} in status {task.status} cannot produce proposals",
+                reason=f"Task {agent_task_id} in status {task.status.value} cannot produce proposals",
             )
 
         now = datetime.now()
-        proposal = AgentProposalORM(
-            proposal_id=str(uuid.uuid4()),
+        proposal = AgentProposal(
+            proposal_id=ProposalId(str(uuid.uuid4())),
             proposal_type=proposal_type,
-            source_agent_task_id=agent_task_id,
+            source_agent_task_id=AgentTaskId(agent_task_id),
             target_object_type=target_object_type,
             target_object_id=target_object_id,
             proposal_payload=proposal_payload,
@@ -133,32 +147,25 @@ class AgentGovernanceService:
             policy_result="",
             approval_status="",
             created_at=now,
-            updated_at=now,
         )
-        return await self._proposal_repo.create(proposal)
+        return await self._proposal_repo.create_domain(proposal)
 
-    # ── Step 3: Policy Check ───────────────────────────────────────────────
+    # -- Step 3: Policy Check ----------------------------------------------
 
     async def evaluate_proposal_policy(
         self,
         proposal_id: str,
         agent_role: str,
         environment: str,
-    ) -> AgentProposalORM:
+    ) -> AgentProposal:
         """Run the proposal through the Policy Engine.
 
-        Updates proposal with policy_result:
-        - pass → auto-approved, can proceed to execution
-        - manual_review_required → needs ApprovalRequest
-        - fail → rejected
+        Updates proposal with policy_result. Returns domain model.
         """
-        proposal = await self._proposal_repo.get_by_id(
-            proposal_id, id_column="proposal_id"
-        )
+        proposal = await self._proposal_repo.get_domain(proposal_id)
         if proposal is None:
             raise ValueError(f"Proposal {proposal_id} not found")
 
-        # Build policy input — map proposal_type to a tool-like check
         policy_input = PolicyCheckInput(
             agent_role=agent_role,
             tool_name=f"proposal:{proposal.proposal_type}",
@@ -168,38 +175,32 @@ class AgentGovernanceService:
             proposal_type=proposal.proposal_type,
         )
 
-        # For proposals, we check if the type itself is allowed
-        # by using a simplified policy evaluation
         policy_output = self._evaluate_proposal_policy(policy_input)
 
-        now = datetime.now()
         proposal.policy_check_id = str(uuid.uuid4())
         proposal.policy_result = policy_output.result.value
-        proposal.updated_at = now
 
         if policy_output.result == PolicyCheckResult.FAIL:
             proposal.approval_status = ProposalStatus.POLICY_REJECTED.value
         elif policy_output.result == PolicyCheckResult.MANUAL_REVIEW_REQUIRED:
             proposal.approval_status = ProposalStatus.PENDING_APPROVAL.value
         else:
-            # Auto-approved for non-live or low-risk proposals
             proposal.approval_status = ProposalStatus.APPROVED.value
 
-        return await self._proposal_repo.update(proposal)
+        return await self._proposal_repo.update_domain(proposal)
 
     def _evaluate_proposal_policy(self, input_data: PolicyCheckInput):
         """Simplified policy evaluation for proposals.
 
         Rules:
         - All proposals are allowed in research/backtest
-        - In paper: read-only and task_trigger auto-approved, controlled_operation needs review
+        - In paper: controlled_operation needs review
         - In live: all controlled_operations need manual review
         """
         from hqmts.agent.policy import PolicyCheckOutput
 
         violations: list[str] = []
 
-        # Kill switch check
         if self._policy_engine._global_kill_switch:
             violations.append("kill_switch_active")
 
@@ -210,7 +211,6 @@ class AgentGovernanceService:
                 violations=violations,
             )
 
-        # Environment-based policy
         if input_data.environment in (Environment.RESEARCH, Environment.BACKTEST):
             return PolicyCheckOutput(
                 result=PolicyCheckResult.PASS,
@@ -219,7 +219,6 @@ class AgentGovernanceService:
             )
 
         if input_data.environment == Environment.PAPER:
-            # Paper: controlled operations need review
             if input_data.proposal_type in (
                 "close_only",
                 "risk_param_change",
@@ -236,7 +235,6 @@ class AgentGovernanceService:
                 violations=[],
             )
 
-        # Live: all non-trivial proposals need manual review
         if input_data.proposal_type in (
             "pause_open",
             "close_only",
@@ -256,7 +254,7 @@ class AgentGovernanceService:
             violations=[],
         )
 
-    # ── Step 4: Create Approval Request ────────────────────────────────────
+    # -- Step 4: Create Approval Request -----------------------------------
 
     async def create_approval_request(
         self,
@@ -264,11 +262,9 @@ class AgentGovernanceService:
         approval_type: str,
         requested_by: str,
         expires_at: datetime | None = None,
-    ) -> ApprovalRequestORM:
-        """Create an approval request for a proposal that requires manual review."""
-        proposal = await self._proposal_repo.get_by_id(
-            proposal_id, id_column="proposal_id"
-        )
+    ) -> ApprovalRequest:
+        """Create an approval request for a proposal needing manual review."""
+        proposal = await self._proposal_repo.get_domain(proposal_id)
         if proposal is None:
             raise ValueError(f"Proposal {proposal_id} not found")
 
@@ -279,30 +275,24 @@ class AgentGovernanceService:
             )
 
         now = datetime.now()
-        approval = ApprovalRequestORM(
-            approval_request_id=str(uuid.uuid4()),
+        approval = ApprovalRequest(
+            approval_request_id=ApprovalRequestId(str(uuid.uuid4())),
             source_type="agent_proposal",
             source_id=proposal_id,
             approval_type=approval_type,
             requested_by=requested_by,
             requested_at=now,
-            decision="pending",
-            expires_at=expires_at or now.replace(
-                hour=23, minute=59, second=59
-            ),
-            created_at=now,
-            updated_at=now,
+            expires_at=expires_at or now.replace(hour=23, minute=59, second=59),
         )
-        approval = await self._approval_repo.create(approval)
+        approval = await self._approval_repo.create_domain(approval)
 
         # Link proposal to approval request
         proposal.approval_request_id = approval.approval_request_id
-        proposal.updated_at = now
-        await self._proposal_repo.update(proposal)
+        await self._proposal_repo.update_domain(proposal)
 
         return approval
 
-    # ── Step 5: Process Approval Decision ──────────────────────────────────
+    # -- Step 5: Process Approval Decision ---------------------------------
 
     async def process_approval_decision(
         self,
@@ -310,59 +300,46 @@ class AgentGovernanceService:
         approver: str,
         decision: str,
         reason: str = "",
-    ) -> ApprovalRequestORM:
-        """Process a human approval decision.
-
-        Updates both the ApprovalRequest and the linked Proposal.
-        """
-        approval = await self._approval_repo.get_by_id(
-            approval_request_id, id_column="approval_request_id"
-        )
+    ) -> ApprovalRequest:
+        """Process a human approval decision. Returns domain model."""
+        approval = await self._approval_repo.get_domain(approval_request_id)
         if approval is None:
             raise ValueError(f"Approval request {approval_request_id} not found")
 
-        if approval.decision != "pending":
+        if approval.is_decided():
             raise ValueError(
-                f"Approval request {approval_request_id} already decided: {approval.decision}"
+                f"Approval request {approval_request_id} already decided: {approval.decision.value}"
             )
 
         now = datetime.now()
         approval.approver = approver
-        approval.decision = decision
+        approval.decision = ApprovalStatus(decision)
         approval.decision_reason = reason
         approval.approved_at = now
-        approval.updated_at = now
-        await self._approval_repo.update(approval)
+        approval = await self._approval_repo.update_domain(approval)
 
         # Update linked proposal
         if approval.source_type == "agent_proposal":
-            proposal = await self._proposal_repo.get_by_field(
-                "approval_request_id", approval_request_id
-            )
+            # Find proposal by approval_request_id
+            proposal = await self._proposal_repo.get_domain(approval.source_id)
             if proposal is not None:
                 if decision == ApprovalStatus.APPROVED.value:
                     proposal.approval_status = ProposalStatus.APPROVED.value
                 elif decision == ApprovalStatus.REJECTED.value:
                     proposal.approval_status = ProposalStatus.REJECTED.value
-                proposal.updated_at = now
-                await self._proposal_repo.update(proposal)
+                await self._proposal_repo.update_domain(proposal)
 
         return approval
 
-    # ── Step 6: Execute Approved Proposal ──────────────────────────────────
+    # -- Step 6: Execute Approved Proposal ---------------------------------
 
     async def execute_proposal(
         self,
         proposal_id: str,
         executed_by_service: str = "agent_governance",
-    ) -> ControlledExecutionORM:
-        """Execute an approved proposal via ControlledExecution.
-
-        Validates: proposal must be approved (policy pass + approval pass).
-        """
-        proposal = await self._proposal_repo.get_by_id(
-            proposal_id, id_column="proposal_id"
-        )
+    ) -> ControlledExecution:
+        """Execute an approved proposal via ControlledExecution."""
+        proposal = await self._proposal_repo.get_domain(proposal_id)
         if proposal is None:
             raise ValueError(f"Proposal {proposal_id} not found")
 
@@ -374,48 +351,43 @@ class AgentGovernanceService:
             )
 
         now = datetime.now()
-        execution = ControlledExecutionORM(
-            controlled_execution_id=str(uuid.uuid4()),
-            source_proposal_id=proposal_id,
-            approval_request_id=proposal.approval_request_id,
+        execution = ControlledExecution(
+            controlled_execution_id=ControlledExecutionId(str(uuid.uuid4())),
+            source_proposal_id=ProposalId(proposal_id),
+            approval_request_id=ApprovalRequestId(proposal.approval_request_id) if proposal.approval_request_id else None,
             action_type=proposal.proposal_type,
             target_object_type=proposal.target_object_type,
             target_object_id=proposal.target_object_id,
-            execution_status=ExecutionStatus.PENDING.value,
+            execution_status=ExecutionStatus.PENDING,
             executed_by_service=executed_by_service,
             started_at=now,
-            created_at=now,
-            updated_at=now,
         )
-        return await self._execution_repo.create(execution)
+        return await self._execution_repo.create_domain(execution)
 
     async def complete_execution(
         self,
         execution_id: str,
         result_ref: str = "",
         failure_reason: str = "",
-    ) -> ControlledExecutionORM:
+    ) -> ControlledExecution:
         """Mark a ControlledExecution as completed or failed."""
-        execution = await self._execution_repo.get_by_id(
-            execution_id, id_column="controlled_execution_id"
-        )
+        execution = await self._execution_repo.get_domain(execution_id)
         if execution is None:
             raise ValueError(f"Execution {execution_id} not found")
 
         now = datetime.now()
         execution.completed_at = now
-        execution.updated_at = now
 
         if failure_reason:
-            execution.execution_status = ExecutionStatus.FAILED.value
+            execution.execution_status = ExecutionStatus.FAILED
             execution.failure_reason = failure_reason
         else:
-            execution.execution_status = ExecutionStatus.COMPLETED.value
+            execution.execution_status = ExecutionStatus.COMPLETED
             execution.result_ref = result_ref
 
-        return await self._execution_repo.update(execution)
+        return await self._execution_repo.update_domain(execution)
 
-    # ── Full Pipeline ──────────────────────────────────────────────────────
+    # -- Full Pipeline -----------------------------------------------------
 
     async def run_full_pipeline(
         self,
@@ -429,13 +401,13 @@ class AgentGovernanceService:
         confidence: float = 0.0,
         triggered_by: str = "system",
         approver: str | None = None,
-    ) -> ControlledExecutionORM | ApprovalRequestORM | AgentProposalORM:
+    ) -> ControlledExecution | ApprovalRequest | AgentProposal:
         """Run the full governance pipeline in one call.
 
         Returns:
-        - ControlledExecutionORM if auto-approved and executed
-        - ApprovalRequestORM if manual review required
-        - AgentProposalORM if rejected by policy
+        - ControlledExecution if auto-approved and executed
+        - ApprovalRequest if manual review required
+        - AgentProposal if rejected by policy
         """
         # Step 1: Create and start task
         task = await self.create_task(
@@ -491,7 +463,7 @@ class AgentGovernanceService:
 
             return approval
 
-        # Step 4c: Auto-approved — execute
+        # Step 4c: Auto-approved - execute
         execution = await self.execute_proposal(proposal.proposal_id)
         await self._complete_task(task.agent_task_id, "completed")
         return execution
@@ -500,10 +472,9 @@ class AgentGovernanceService:
         self, task_id: str, reason: str = ""
     ) -> None:
         """Mark task as completed."""
-        task = await self._task_repo.get_by_id(task_id, id_column="agent_task_id")
+        task = await self._task_repo.get_domain(task_id)
         if task is not None:
             now = datetime.now()
-            task.status = AgentTaskStatus.COMPLETED.value
+            task.status = AgentTaskStatus.COMPLETED
             task.completed_at = now
-            task.updated_at = now
-            await self._task_repo.update(task)
+            await self._task_repo.update_domain(task)

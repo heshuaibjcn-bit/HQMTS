@@ -90,3 +90,40 @@ class TestCashReservation:
             updated_at=datetime.now(),
         )
         assert not r.can_consume(Decimal("100"))
+
+
+class TestReservationManagerSafety:
+    """Tests for ReservationManager available_cash enforcement."""
+
+    @pytest.mark.asyncio
+    async def test_reserve_raises_when_available_cash_none(self):
+        from unittest.mock import AsyncMock
+
+        from hqmts.reservation.manager import ReservationManager
+
+        repo = AsyncMock()
+        manager = ReservationManager(reservation_repo=repo)
+        with pytest.raises(ValueError, match="available_cash must be provided"):
+            await manager.reserve(
+                account_id="acc-001",
+                strategy_instance_id="strat-001",
+                amount=Decimal("10000"),
+                available_cash=None,
+            )
+
+    @pytest.mark.asyncio
+    async def test_reserve_raises_insufficient_funds(self):
+        from unittest.mock import AsyncMock
+
+        from hqmts.reservation.manager import ReservationManager
+
+        repo = AsyncMock()
+        repo.get_total_reserved_amount = AsyncMock(return_value=Decimal("90000"))
+        manager = ReservationManager(reservation_repo=repo)
+        with pytest.raises(InsufficientFundsError):
+            await manager.reserve(
+                account_id="acc-001",
+                strategy_instance_id="strat-001",
+                amount=Decimal("20000"),
+                available_cash=Decimal("100000"),
+            )

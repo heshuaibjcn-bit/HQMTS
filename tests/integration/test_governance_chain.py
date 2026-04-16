@@ -1,6 +1,6 @@
 """Integration tests for Agent Governance Service.
 
-Tests the full Proposal → Approval → Execution chain.
+Tests the full Proposal -> Approval -> Execution chain.
 """
 
 from __future__ import annotations
@@ -21,6 +21,16 @@ from hqmts.core.enums import (
 )
 from hqmts.agent.policy import PolicyEngine
 from hqmts.agent.service import AgentGovernanceService
+from hqmts.db.repositories.agent_repos import (
+    AgentProposalRepository,
+    AgentTaskRepository,
+    ApprovalRequestRepository,
+    ControlledExecutionRepository,
+)
+from hqmts.domain.agent_proposal import AgentProposal
+from hqmts.domain.agent_task import AgentTask
+from hqmts.domain.approval_request import ApprovalRequest
+from hqmts.domain.controlled_execution import ControlledExecution
 
 
 @pytest.fixture
@@ -30,7 +40,13 @@ def policy_engine():
 
 @pytest.fixture
 def service(session, policy_engine):
-    return AgentGovernanceService(session, policy_engine)
+    return AgentGovernanceService(
+        task_repo=AgentTaskRepository(session),
+        proposal_repo=AgentProposalRepository(session),
+        approval_repo=ApprovalRequestRepository(session),
+        execution_repo=ControlledExecutionRepository(session),
+        policy_engine=policy_engine,
+    )
 
 
 class TestAgentGovernanceService:
@@ -50,10 +66,8 @@ class TestAgentGovernanceService:
             confidence=0.8,
         )
 
-        assert result is not None
-        # In research, should get a ControlledExecution (auto-approved)
-        assert hasattr(result, "execution_status")
-        assert result.execution_status == ExecutionStatus.PENDING.value
+        assert isinstance(result, ControlledExecution)
+        assert result.execution_status == ExecutionStatus.PENDING
         assert result.action_type == "pause_open"
         assert result.target_object_id == "strat-001"
 
@@ -71,17 +85,15 @@ class TestAgentGovernanceService:
             target_object_id="strat-002",
         )
 
-        assert result is not None
-        # Should get an ApprovalRequest
-        assert hasattr(result, "decision")
-        assert result.decision == "pending"
+        assert isinstance(result, ApprovalRequest)
+        assert result.decision == ApprovalStatus.PENDING
         assert result.source_type == "agent_proposal"
 
         await session.commit()
 
     @pytest.mark.asyncio
     async def test_full_chain_with_approval(self, service, session):
-        """Full chain: create → proposal → policy → approval → execution."""
+        """Full chain: create -> proposal -> policy -> approval -> execution."""
         result = await service.run_full_pipeline(
             agent_role=AgentRole.MONITORING.value,
             environment=Environment.LIVE.value,
@@ -92,16 +104,14 @@ class TestAgentGovernanceService:
             approver="human_admin",  # Auto-approve for this test
         )
 
-        assert result is not None
-        # With approver, should get ControlledExecution
-        assert hasattr(result, "execution_status")
-        assert result.execution_status == ExecutionStatus.PENDING.value
+        assert isinstance(result, ControlledExecution)
+        assert result.execution_status == ExecutionStatus.PENDING
 
         await session.commit()
 
     @pytest.mark.asyncio
     async def test_step_by_step_research_flow(self, service, session):
-        """Step-by-step test: create task → proposal → policy → execute."""
+        """Step-by-step test: create task -> proposal -> policy -> execute."""
         # Step 1: Create task
         task = await service.create_task(
             agent_role=AgentRole.RESEARCH.value,
@@ -109,12 +119,13 @@ class TestAgentGovernanceService:
             environment=Environment.RESEARCH.value,
             triggered_by="user:test",
         )
-        assert task.status == AgentTaskStatus.CREATED.value
+        assert isinstance(task, AgentTask)
+        assert task.status == AgentTaskStatus.CREATED
         await session.commit()
 
         # Step 2: Start task
         task = await service.start_task(task.agent_task_id)
-        assert task.status == AgentTaskStatus.RUNNING.value
+        assert task.status == AgentTaskStatus.RUNNING
         await session.commit()
 
         # Step 3: Create proposal
@@ -125,6 +136,7 @@ class TestAgentGovernanceService:
             target_object_id="strat-004",
             confidence=0.75,
         )
+        assert isinstance(proposal, AgentProposal)
         assert proposal.confidence == 0.75
         assert proposal.policy_result == ""  # Not yet evaluated
         await session.commit()
@@ -141,7 +153,8 @@ class TestAgentGovernanceService:
 
         # Step 5: Execute
         execution = await service.execute_proposal(proposal.proposal_id)
-        assert execution.execution_status == ExecutionStatus.PENDING.value
+        assert isinstance(execution, ControlledExecution)
+        assert execution.execution_status == ExecutionStatus.PENDING
         assert execution.source_proposal_id == proposal.proposal_id
         await session.commit()
 
@@ -150,7 +163,7 @@ class TestAgentGovernanceService:
             execution.controlled_execution_id,
             result_ref="action_completed:paused",
         )
-        assert execution.execution_status == ExecutionStatus.COMPLETED.value
+        assert execution.execution_status == ExecutionStatus.COMPLETED
         assert execution.result_ref == "action_completed:paused"
         await session.commit()
 
@@ -175,7 +188,7 @@ class TestAgentGovernanceService:
         )
         await session.commit()
 
-        # Policy check → manual review
+        # Policy check -> manual review
         proposal = await service.evaluate_proposal_policy(
             proposal_id=proposal.proposal_id,
             agent_role=AgentRole.MONITORING.value,
@@ -190,7 +203,7 @@ class TestAgentGovernanceService:
             approval_type="agent_close_only",
             requested_by="agent:risk_analyst",
         )
-        assert approval.decision == "pending"
+        assert approval.decision == ApprovalStatus.PENDING
         await session.commit()
 
         # Reject
@@ -200,13 +213,11 @@ class TestAgentGovernanceService:
             decision=ApprovalStatus.REJECTED.value,
             reason="Not appropriate for current market",
         )
-        assert approval.decision == ApprovalStatus.REJECTED.value
+        assert approval.decision == ApprovalStatus.REJECTED
         await session.commit()
 
         # Verify proposal is now rejected
-        proposal = await service._proposal_repo.get_by_id(
-            proposal.proposal_id, id_column="proposal_id"
-        )
+        proposal = await service._proposal_repo.get_domain(proposal.proposal_id)
         assert proposal.approval_status == ProposalStatus.REJECTED.value
 
         # Execution should fail
@@ -234,7 +245,7 @@ class TestAgentGovernanceService:
             result.controlled_execution_id,
             failure_reason="Target position not found",
         )
-        assert execution.execution_status == ExecutionStatus.FAILED.value
+        assert execution.execution_status == ExecutionStatus.FAILED
         assert execution.failure_reason == "Target position not found"
 
     @pytest.mark.asyncio
@@ -247,8 +258,8 @@ class TestAgentGovernanceService:
             triggered_by="test",
         )
         # Manually set to completed
-        task.status = AgentTaskStatus.COMPLETED.value
-        await service._task_repo.update(task)
+        task.status = AgentTaskStatus.COMPLETED
+        task = await service._task_repo.update_domain(task)
         await session.commit()
 
         from hqmts.core.exceptions import AgentPermissionDeniedError
@@ -277,5 +288,5 @@ class TestAgentGovernanceService:
         await session.commit()
 
         # Should get rejected proposal
-        assert hasattr(result, "policy_result")
+        assert isinstance(result, AgentProposal)
         assert result.policy_result == PolicyCheckResult.FAIL.value
