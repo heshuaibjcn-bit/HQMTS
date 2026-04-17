@@ -116,8 +116,13 @@ class PaperLiveAdmissionService:
     async def evaluate_readiness(
         self,
         admission_id: str,
+        **extra_assessor_kwargs,
     ) -> AdmissionRecord:
-        """Run readiness assessment and transition to PENDING_REVIEW."""
+        """Run readiness assessment and transition to PENDING_REVIEW.
+
+        Extra kwargs are passed to ReadinessAssessor.assess() for
+        backtest consistency, governance, and stability checks.
+        """
         record = self._admissions.get(admission_id)
         if record is None:
             raise ValueError(f"Admission {admission_id} not found")
@@ -139,6 +144,7 @@ class PaperLiveAdmissionService:
             paper_total_trades=record.paper_total_trades,
             paper_days=record.paper_trading_days,
             max_daily_loss_pct=record.max_daily_loss_pct,
+            **extra_assessor_kwargs,
         )
 
         record.readiness_score = report.total_score
