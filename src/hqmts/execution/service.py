@@ -35,12 +35,14 @@ class ExecutionService:
         reservation_manager: ReservationManager,
         converter: SignalConverter,
         reject_handler: RejectHandler,
+        qmt_adapter: object | None = None,
     ) -> None:
         self._risk_engine = risk_engine
         self._final_check = final_check
         self._reservation_manager = reservation_manager
         self._converter = converter
         self._reject_handler = reject_handler
+        self._qmt_adapter = qmt_adapter
 
     async def process_signal(
         self,
@@ -134,6 +136,49 @@ class ExecutionService:
                     reason="Pipeline exception during execution",
                 )
             raise
+
+    async def submit_order(
+        self,
+        order_request: OrderRequest,
+    ) -> dict | None:
+        """Submit an order request to the QMT adapter.
+
+        This is Step 7 of the execution pipeline. The adapter returns
+        broker-specific response data (broker_order_id, etc.) or None on failure.
+        On failure, releases the reservation automatically.
+        """
+        if self._qmt_adapter is None:
+            logger.warning("QMT_SUBMIT_SKIP no adapter configured, order=%s", order_request.order_request_id)
+            return None
+        try:
+            result = await self._qmt_adapter.submit_order({  # type: ignore
+                "order_request_id": order_request.order_request_id,
+                "instrument_id": order_request.instrument_id,
+                "side": order_request.side.value,
+                "price": str(order_request.price),
+                "quantity": order_request.quantity,
+                "order_type": order_request.order_type.value,
+                "idempotency_key": order_request.idempotency_key,
+            })
+            logger.info(
+                "QMT_SUBMIT_OK order=%s instrument=%s side=%s qty=%d",
+                order_request.order_request_id,
+                order_request.instrument_id,
+                order_request.side.value,
+                order_request.quantity,
+            )
+            return result
+        except Exception as exc:
+            logger.error(
+                "QMT_SUBMIT_FAILED order=%s error=%s",
+                order_request.order_request_id, exc,
+            )
+            await self.handle_order_failed(
+                reservation_id=order_request.reservation_id,
+                order_id=order_request.order_request_id,
+                reason=f"QMT submit failed: {exc}",
+            )
+            return None
 
     async def handle_fill(
         self,

@@ -24,11 +24,16 @@ def create_invocation_from_result(
     if result.status == "denied" and result.error and "forbidden" in result.error.lower():
         actual_level = SideEffectLevel.FORBIDDEN_ATTEMPT
 
+    output_digest = ""
+    if result.output:
+        output_digest = str(hash(frozenset(result.output.items())))
+
     return ToolInvocation(
         invocation_id=result.invocation_id,
         agent_task_id=request.agent_task_id,
         tool_name=result.tool_name,
         input_digest=str(hash(frozenset(request.parameters.items()))) if request.parameters else "",
+        output_digest=output_digest,
         side_effect_level=actual_level,
         started_at=started_at,
         finished_at=now_shanghai(),

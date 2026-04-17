@@ -137,17 +137,11 @@ class PaperTradingEngine:
         """
         instrument_id = str(signal.instrument_id)
 
-        buy_types = {SignalType.OPEN_LONG, SignalType.CLOSE_SHORT}
-        sell_types = {SignalType.CLOSE_LONG, SignalType.OPEN_SHORT}
-
-        if signal.signal_type in buy_types:
-            side = "buy"
-        elif signal.signal_type in sell_types:
-            side = "sell"
-        elif signal.signal_type == SignalType.FLATTEN:
-            side = "sell"
-        else:
-            # HOLD or unknown — no action
+        # Use shared side determination (same mapping as SignalConverter)
+        from hqmts.execution.converter import SignalConverter
+        try:
+            side = SignalConverter.determine_side(signal).value
+        except ValueError:
             return PaperOrder(
                 order_id=str(uuid.uuid4()),
                 signal_id=str(signal.signal_id),

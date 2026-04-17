@@ -219,6 +219,16 @@ CONTROLLED_OPERATION_TOOLS: list[ToolDefinition] = [
         allowed_roles=[AgentRole.RECOVERY_COPILOT, AgentRole.ORCHESTRATOR],
         requires_approval=True,
     ),
+    ToolDefinition(
+        name="propose_live_release",
+        category=ToolCategory.CONTROLLED_OPERATION,
+        description="Propose releasing strategy to live_running from pause_open/close_only",
+        side_effect_level=SideEffectLevel.CONTROLLED_OPERATION,
+        allowed_environments=[Environment.LIVE],
+        allowed_roles=[AgentRole.RECOVERY_COPILOT, AgentRole.ORCHESTRATOR],
+        requires_approval=True,
+        idempotent=True,
+    ),
 ]
 
 ALL_TOOLS: dict[str, ToolDefinition] = {

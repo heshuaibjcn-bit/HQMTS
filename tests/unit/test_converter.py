@@ -76,13 +76,13 @@ class TestDetermineSide:
     )
     async def test_side_mapping(self, converter, signal_type, expected_side):
         signal = _make_signal(signal_type)
-        side = converter._determine_side(signal)
+        side = converter.determine_side(signal)
         assert side == expected_side
 
     async def test_hold_raises(self, converter):
         signal = _make_signal(SignalType.HOLD)
         with pytest.raises(ValueError, match="Cannot determine side"):
-            converter._determine_side(signal)
+            converter.determine_side(signal)
 
 
 class TestSignalValidation:

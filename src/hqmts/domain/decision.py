@@ -40,8 +40,13 @@ class DecisionSnapshot(BaseModel):
     model_config = {"frozen": True}
 
     def is_live_eligible(self) -> bool:
-        """Check if this snapshot is eligible for Live execution."""
-        return self.snapshot_completeness in (
-            SnapshotCompleteness.COMPLETE,
-            SnapshotCompleteness.PARTIAL_ALLOWED,
-        ) and self.feature_snapshot_id is not None
+        """Check if this snapshot is eligible for Live execution.
+
+        Live-eligible snapshots must have both feature data and bar data bound.
+        """
+        return (
+            self.snapshot_completeness
+            in (SnapshotCompleteness.COMPLETE, SnapshotCompleteness.PARTIAL_ALLOWED)
+            and self.feature_snapshot_id is not None
+            and self.bar_set_id is not None
+        )

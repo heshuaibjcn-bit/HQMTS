@@ -6,6 +6,7 @@ Outputs: pass, fail, manual_review_required.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from hqmts.core.enums import (
@@ -16,6 +17,8 @@ from hqmts.core.enums import (
     ToolCategory,
 )
 from hqmts.agent.types import ALL_TOOLS, FORBIDDEN_TOOLS, ToolDefinition
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -163,7 +166,13 @@ class PolicyEngine:
         )
 
     def set_kill_switch(self, active: bool) -> None:
-        """Set global kill switch state."""
+        """Set global kill switch state. Logs P0 alert on activation."""
+        if active and not self._global_kill_switch:
+            logger.warning(
+                "KILL_SWITCH_ACTIVATED — all non-read agent operations blocked until deactivated",
+            )
+        elif not active and self._global_kill_switch:
+            logger.info("KILL_SWITCH_DEACTIVATED — agent operations restored")
         self._global_kill_switch = active
 
     def is_kill_switch_active(self) -> bool:

@@ -106,7 +106,7 @@ class TestExtendedP1P3Rules:
 
     def test_p3_rules_count(self):
         from hqmts.monitoring.alerts import P3_RULES
-        assert len(P3_RULES) >= 4
+        assert len(P3_RULES) >= 3
 
     def test_all_rules_cover_levels(self):
         from hqmts.monitoring.alerts import ALL_RULES

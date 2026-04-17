@@ -70,19 +70,24 @@ class ExternalEventDetector:
         internal_trades: list[InternalTrade],
         broker_trades: list[BrokerTrade],
         detect_time: datetime | None = None,
+        time_window_seconds: int = 60,
     ) -> list[ExternalManualEvent]:
         """Compare internal trade records against broker reports.
 
         Returns events for broker trades with no matching internal record.
+
+        Matching logic:
+        1. Exact: broker_trade_id matches internal trade_id
+        2. Fuzzy: same instrument+side+quantity+price within time window
         """
         now = detect_time or now_shanghai()
         internal_trade_ids = {t.trade_id for t in internal_trades}
 
-        # Also match by instrument+side+quantity+price within time window
-        internal_signatures = set()
+        # Index internal trades by signature for fuzzy matching
+        internal_signatures: dict[tuple, list[InternalTrade]] = {}
         for t in internal_trades:
             sig = (t.instrument_id, t.side, t.quantity, str(t.price))
-            internal_signatures.add(sig)
+            internal_signatures.setdefault(sig, []).append(t)
 
         events: list[ExternalManualEvent] = []
         for bt in broker_trades:
@@ -90,11 +95,18 @@ class ExternalEventDetector:
             if bt.broker_trade_id in internal_trade_ids:
                 continue
 
-            # Fuzzy match: same instrument, side, quantity, price
-            if bt.instrument_id and bt.side and bt.quantity and bt.price:
+            # Fuzzy match: same instrument, side, quantity, price within time window
+            matched = False
+            if bt.instrument_id and bt.side and bt.quantity and bt.price and bt.trade_time:
                 sig = (bt.instrument_id, bt.side, bt.quantity, str(bt.price))
-                if sig in internal_signatures:
-                    continue
+                candidates = internal_signatures.get(sig, [])
+                for cand in candidates:
+                    if cand.trade_time and abs((bt.trade_time - cand.trade_time).total_seconds()) <= time_window_seconds:
+                        matched = True
+                        break
+
+            if matched:
+                continue
 
             # No match found → external event
             event_type = self._classify_event(bt)
