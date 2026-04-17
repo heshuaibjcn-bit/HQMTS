@@ -18,7 +18,7 @@ from hqmts.core.exceptions import (
     ExpiredSignalError,
     MissingDecisionSnapshotError,
 )
-from hqmts.core.types import InstrumentId, SignalId, StrategyInstanceId, VersionStr
+from hqmts.core.types import InstrumentId, SignalId, StrategyInstanceId, VersionStr, now_shanghai
 from hqmts.domain.risk import RiskCheckResult
 from hqmts.domain.signal import Signal
 from hqmts.execution.converter import SignalConverter
@@ -31,7 +31,7 @@ def _make_signal(
     expired: bool = False,
     with_decision: bool = True,
 ) -> Signal:
-    now = datetime.now()
+    now = now_shanghai()
     return Signal(
         signal_id=SignalId(str(uuid.uuid4())),
         strategy_instance_id=StrategyInstanceId("strat-001"),

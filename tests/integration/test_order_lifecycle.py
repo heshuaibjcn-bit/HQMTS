@@ -19,7 +19,7 @@ from hqmts.statemachine.order_fsm import order_fsm
 
 
 class TestOrderLifecycle:
-    """Full order lifecycle: create -> submit -> accept -> partial fill -> fill."""
+    """Full order lifecycle: pending -> submit -> accept -> partial fill -> fill."""
 
     @pytest.mark.asyncio
     async def test_order_create_and_repo_roundtrip(self, session: AsyncSession):
@@ -33,7 +33,7 @@ class TestOrderLifecycle:
             side="buy",
             price=Decimal("10.50"),
             quantity=1000,
-            status=OrderStatus.CREATED.value,
+            status=OrderStatus.PENDING.value,
             created_at=now,
             updated_at=now,
         )
@@ -61,34 +61,30 @@ class TestOrderLifecycle:
             side="sell",
             price=Decimal("1800.00"),
             quantity=100,
-            status=OrderStatus.CREATED.value,
+            status=OrderStatus.PENDING.value,
             created_at=now,
             updated_at=now,
         )
         await repo.create(order)
 
-        # CREATED -> SUBMITTING
-        new_status = order_fsm.transition(OrderStatus.CREATED, OrderStatus.SUBMITTING)
-        assert new_status == OrderStatus.SUBMITTING
+        # PENDING -> SUBMITTED
+        new_status = order_fsm.transition(OrderStatus.PENDING, OrderStatus.SUBMITTED)
+        assert new_status == OrderStatus.SUBMITTED
         order.status = new_status.value
         await repo.update(order)
-
-        # SUBMITTING -> SUBMITTED
-        new_status = order_fsm.transition(OrderStatus.SUBMITTING, OrderStatus.SUBMITTED)
-        order.status = new_status.value
 
         # SUBMITTED -> ACCEPTED
         new_status = order_fsm.transition(OrderStatus.SUBMITTED, OrderStatus.ACCEPTED)
         order.status = new_status.value
 
-        # ACCEPTED -> PARTIALLY_FILLED
-        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED)
+        # ACCEPTED -> PARTIAL_FILLED
+        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.PARTIAL_FILLED)
         order.status = new_status.value
         order.filled_quantity = 50
         order.avg_fill_price = Decimal("1799.50")
 
-        # PARTIALLY_FILLED -> FILLED
-        new_status = order_fsm.transition(OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED)
+        # PARTIAL_FILLED -> FILLED
+        new_status = order_fsm.transition(OrderStatus.PARTIAL_FILLED, OrderStatus.FILLED)
         order.status = new_status.value
         order.filled_quantity = 100
         order.avg_fill_price = Decimal("1800.00")
@@ -117,16 +113,15 @@ class TestOrderLifecycle:
             side="buy",
             price=Decimal("10.00"),
             quantity=500,
-            status=OrderStatus.CREATED.value,
+            status=OrderStatus.PENDING.value,
             created_at=now,
             updated_at=now,
         )
         await repo.create(order)
 
-        # CREATED -> SUBMITTING -> SUBMITTED -> REJECTED
-        for target in [OrderStatus.SUBMITTING, OrderStatus.SUBMITTED]:
-            new_status = order_fsm.transition(OrderStatus(order.status), target)
-            order.status = new_status.value
+        # PENDING -> SUBMITTED -> REJECTED
+        new_status = order_fsm.transition(OrderStatus(order.status), OrderStatus.SUBMITTED)
+        order.status = new_status.value
 
         new_status = order_fsm.transition(OrderStatus.SUBMITTED, OrderStatus.REJECTED)
         order.status = new_status.value
@@ -153,21 +148,18 @@ class TestOrderLifecycle:
             side="buy",
             price=Decimal("200.00"),
             quantity=200,
-            status=OrderStatus.CREATED.value,
+            status=OrderStatus.PENDING.value,
             created_at=now,
             updated_at=now,
         )
         await repo.create(order)
 
-        # CREATED -> SUBMITTING -> SUBMITTED -> ACCEPTED -> CANCEL_PENDING -> CANCELED
-        for target in [OrderStatus.SUBMITTING, OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]:
+        # PENDING -> SUBMITTED -> ACCEPTED -> CANCELED
+        for target in [OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]:
             new_status = order_fsm.transition(OrderStatus(order.status), target)
             order.status = new_status.value
 
-        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.CANCEL_PENDING)
-        order.status = new_status.value
-
-        new_status = order_fsm.transition(OrderStatus.CANCEL_PENDING, OrderStatus.CANCELED)
+        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.CANCELED)
         order.status = new_status.value
 
         await repo.update(order)
@@ -178,11 +170,11 @@ class TestOrderLifecycle:
 
     @pytest.mark.asyncio
     async def test_illegal_transition_raises(self):
-        """Cannot jump from CREATED directly to FILLED."""
+        """Cannot jump from PENDING directly to FILLED."""
         from hqmts.core.exceptions import IllegalTransitionError
 
         with pytest.raises(IllegalTransitionError):
-            order_fsm.transition(OrderStatus.CREATED, OrderStatus.FILLED)
+            order_fsm.transition(OrderStatus.PENDING, OrderStatus.FILLED)
 
     @pytest.mark.asyncio
     async def test_get_active_orders_by_account(self, session: AsyncSession):

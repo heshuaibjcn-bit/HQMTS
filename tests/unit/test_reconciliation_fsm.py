@@ -1,4 +1,4 @@
-"""Tests for Reconciliation and Recovery state machines."""
+"""Tests for Reconciliation and Recovery state machines (SAD 15.4, 15.5)."""
 
 import pytest
 
@@ -11,104 +11,190 @@ from hqmts.statemachine.recovery_fsm import recovery_fsm
 class TestReconciliationFSM:
     """Tests based on SAD 15.4."""
 
-    def test_pending_to_running(self):
+    def test_initialized_to_comparing(self):
         assert reconciliation_fsm.can_transition(
-            ReconciliationStatus.PENDING, ReconciliationStatus.RUNNING
+            ReconciliationStatus.INITIALIZED, ReconciliationStatus.COMPARING
         )
 
-    def test_running_to_matched(self):
+    def test_initialized_to_canceled(self):
         assert reconciliation_fsm.can_transition(
-            ReconciliationStatus.RUNNING, ReconciliationStatus.MATCHED
+            ReconciliationStatus.INITIALIZED, ReconciliationStatus.CANCELED
         )
 
-    def test_running_to_mismatch(self):
+    def test_comparing_to_matched(self):
         assert reconciliation_fsm.can_transition(
-            ReconciliationStatus.RUNNING, ReconciliationStatus.MISMATCH_DETECTED
+            ReconciliationStatus.COMPARING, ReconciliationStatus.MATCHED
         )
 
-    def test_mismatch_to_corrected(self):
+    def test_comparing_to_mismatched(self):
         assert reconciliation_fsm.can_transition(
-            ReconciliationStatus.MISMATCH_DETECTED, ReconciliationStatus.CORRECTED
+            ReconciliationStatus.COMPARING, ReconciliationStatus.MISMATCHED
         )
 
-    def test_mismatch_to_escalated(self):
+    def test_comparing_to_failed(self):
         assert reconciliation_fsm.can_transition(
-            ReconciliationStatus.MISMATCH_DETECTED, ReconciliationStatus.ESCALATED
+            ReconciliationStatus.COMPARING, ReconciliationStatus.FAILED
         )
 
-    def test_closed_is_terminal(self):
-        assert reconciliation_fsm.is_terminal(ReconciliationStatus.CLOSED)
+    def test_mismatched_to_adjusting(self):
+        assert reconciliation_fsm.can_transition(
+            ReconciliationStatus.MISMATCHED, ReconciliationStatus.ADJUSTING
+        )
 
-    def test_closed_cannot_transition(self):
+    def test_mismatched_to_escalated(self):
+        assert reconciliation_fsm.can_transition(
+            ReconciliationStatus.MISMATCHED, ReconciliationStatus.ESCALATED
+        )
+
+    def test_adjusting_to_completed(self):
+        assert reconciliation_fsm.can_transition(
+            ReconciliationStatus.ADJUSTING, ReconciliationStatus.COMPLETED
+        )
+
+    def test_adjusting_to_failed(self):
+        assert reconciliation_fsm.can_transition(
+            ReconciliationStatus.ADJUSTING, ReconciliationStatus.FAILED
+        )
+
+    # Terminal states
+    def test_completed_is_terminal(self):
+        assert reconciliation_fsm.is_terminal(ReconciliationStatus.COMPLETED)
+
+    def test_failed_is_terminal(self):
+        assert reconciliation_fsm.is_terminal(ReconciliationStatus.FAILED)
+
+    def test_canceled_is_terminal(self):
+        assert reconciliation_fsm.is_terminal(ReconciliationStatus.CANCELED)
+
+    def test_escalated_is_terminal(self):
+        assert reconciliation_fsm.is_terminal(ReconciliationStatus.ESCALATED)
+
+    def test_terminal_cannot_transition(self):
         with pytest.raises(TerminalStateError):
-            reconciliation_fsm.transition(ReconciliationStatus.CLOSED, ReconciliationStatus.RUNNING)
+            reconciliation_fsm.transition(ReconciliationStatus.COMPLETED, ReconciliationStatus.COMPARING)
 
-    def test_matched_to_closed(self):
-        state = reconciliation_fsm.transition(
-            ReconciliationStatus.MATCHED, ReconciliationStatus.CLOSED
-        )
-        assert state == ReconciliationStatus.CLOSED
+    def test_escalated_cannot_transition(self):
+        with pytest.raises(TerminalStateError):
+            reconciliation_fsm.transition(ReconciliationStatus.ESCALATED, ReconciliationStatus.ADJUSTING)
 
+    # Happy paths
     def test_happy_path(self):
-        state = ReconciliationStatus.PENDING
-        state = reconciliation_fsm.transition(state, ReconciliationStatus.RUNNING)
+        """initialized → comparing → matched → completed"""
+        state = ReconciliationStatus.INITIALIZED
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.COMPARING)
         state = reconciliation_fsm.transition(state, ReconciliationStatus.MATCHED)
-        state = reconciliation_fsm.transition(state, ReconciliationStatus.CLOSED)
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.COMPLETED)
         assert reconciliation_fsm.is_terminal(state)
 
     def test_mismatch_path(self):
-        state = ReconciliationStatus.PENDING
-        state = reconciliation_fsm.transition(state, ReconciliationStatus.RUNNING)
-        state = reconciliation_fsm.transition(state, ReconciliationStatus.MISMATCH_DETECTED)
-        state = reconciliation_fsm.transition(state, ReconciliationStatus.CORRECTED)
-        state = reconciliation_fsm.transition(state, ReconciliationStatus.CLOSED)
+        """initialized → comparing → mismatched → adjusting → completed"""
+        state = ReconciliationStatus.INITIALIZED
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.COMPARING)
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.MISMATCHED)
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.ADJUSTING)
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.COMPLETED)
         assert reconciliation_fsm.is_terminal(state)
+
+    def test_cancel_path(self):
+        """initialized → canceled"""
+        state = ReconciliationStatus.INITIALIZED
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.CANCELED)
+        assert reconciliation_fsm.is_terminal(state)
+
+    def test_escalate_path(self):
+        """initialized → comparing → mismatched → escalated"""
+        state = ReconciliationStatus.INITIALIZED
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.COMPARING)
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.MISMATCHED)
+        state = reconciliation_fsm.transition(state, ReconciliationStatus.ESCALATED)
+        assert reconciliation_fsm.is_terminal(state)
+
+    def test_all_9_states(self):
+        assert len(reconciliation_fsm.get_all_states()) == 9
 
 
 class TestRecoveryFSM:
     """Tests based on SAD 15.5."""
 
-    def test_created_to_loading_state(self):
-        assert recovery_fsm.can_transition(RecoveryStatus.CREATED, RecoveryStatus.LOADING_STATE)
+    def test_created_to_diagnosing(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.CREATED, RecoveryStatus.DIAGNOSING)
 
-    def test_loading_to_reconciling(self):
-        assert recovery_fsm.can_transition(RecoveryStatus.LOADING_STATE, RecoveryStatus.RECONCILING)
+    def test_created_to_canceled(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.CREATED, RecoveryStatus.CANCELED)
 
-    def test_reconciling_to_rebuilding(self):
-        assert recovery_fsm.can_transition(RecoveryStatus.RECONCILING, RecoveryStatus.REBUILDING_CONTEXT)
+    def test_diagnosing_to_recovering(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.DIAGNOSING, RecoveryStatus.RECOVERING)
 
-    def test_rebuilding_to_pending_confirmation(self):
-        assert recovery_fsm.can_transition(
-            RecoveryStatus.REBUILDING_CONTEXT, RecoveryStatus.PENDING_CONFIRMATION
-        )
+    def test_diagnosing_to_failed(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.DIAGNOSING, RecoveryStatus.FAILED)
 
-    def test_pending_to_completed(self):
-        assert recovery_fsm.can_transition(
-            RecoveryStatus.PENDING_CONFIRMATION, RecoveryStatus.COMPLETED
-        )
+    def test_recovering_to_verifying(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.RECOVERING, RecoveryStatus.VERIFYING)
 
+    def test_recovering_to_failed(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.RECOVERING, RecoveryStatus.FAILED)
+
+    def test_verifying_to_completed(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.VERIFYING, RecoveryStatus.COMPLETED)
+
+    def test_verifying_can_loop_to_recovering(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.VERIFYING, RecoveryStatus.RECOVERING)
+
+    def test_verifying_to_failed(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.VERIFYING, RecoveryStatus.FAILED)
+
+    # Terminal states
     def test_completed_is_terminal(self):
         assert recovery_fsm.is_terminal(RecoveryStatus.COMPLETED)
 
-    def test_aborted_is_terminal(self):
-        assert recovery_fsm.is_terminal(RecoveryStatus.ABORTED)
+    def test_failed_is_terminal(self):
+        assert recovery_fsm.is_terminal(RecoveryStatus.FAILED)
 
-    def test_escalated_can_return_to_pending(self):
-        assert recovery_fsm.can_transition(
-            RecoveryStatus.ESCALATED, RecoveryStatus.PENDING_CONFIRMATION
-        )
+    def test_canceled_is_terminal(self):
+        assert recovery_fsm.is_terminal(RecoveryStatus.CANCELED)
 
+    def test_terminal_cannot_transition(self):
+        with pytest.raises(TerminalStateError):
+            recovery_fsm.transition(RecoveryStatus.COMPLETED, RecoveryStatus.DIAGNOSING)
+
+    def test_failed_cannot_transition(self):
+        with pytest.raises(TerminalStateError):
+            recovery_fsm.transition(RecoveryStatus.FAILED, RecoveryStatus.DIAGNOSING)
+
+    # Full paths
     def test_full_recovery_path(self):
+        """created → diagnosing → recovering → verifying → completed"""
         state = RecoveryStatus.CREATED
-        state = recovery_fsm.transition(state, RecoveryStatus.LOADING_STATE)
-        state = recovery_fsm.transition(state, RecoveryStatus.RECONCILING)
-        state = recovery_fsm.transition(state, RecoveryStatus.REBUILDING_CONTEXT)
-        state = recovery_fsm.transition(state, RecoveryStatus.PENDING_CONFIRMATION)
+        state = recovery_fsm.transition(state, RecoveryStatus.DIAGNOSING)
+        state = recovery_fsm.transition(state, RecoveryStatus.RECOVERING)
+        state = recovery_fsm.transition(state, RecoveryStatus.VERIFYING)
         state = recovery_fsm.transition(state, RecoveryStatus.COMPLETED)
         assert recovery_fsm.is_terminal(state)
 
-    def test_abort_from_any_non_terminal(self):
-        """Abort can happen from most non-terminal states."""
-        assert recovery_fsm.can_transition(RecoveryStatus.CREATED, RecoveryStatus.ABORTED)
-        assert recovery_fsm.can_transition(RecoveryStatus.LOADING_STATE, RecoveryStatus.ABORTED)
-        assert recovery_fsm.can_transition(RecoveryStatus.RECONCILING, RecoveryStatus.ABORTED)
+    def test_cancel_from_created(self):
+        state = RecoveryStatus.CREATED
+        state = recovery_fsm.transition(state, RecoveryStatus.CANCELED)
+        assert recovery_fsm.is_terminal(state)
+
+    def test_cancel_from_diagnosing(self):
+        assert recovery_fsm.can_transition(RecoveryStatus.DIAGNOSING, RecoveryStatus.CANCELED)
+
+    def test_fail_during_diagnosing(self):
+        state = RecoveryStatus.CREATED
+        state = recovery_fsm.transition(state, RecoveryStatus.DIAGNOSING)
+        state = recovery_fsm.transition(state, RecoveryStatus.FAILED)
+        assert recovery_fsm.is_terminal(state)
+
+    def test_verify_loop_back(self):
+        """verifying → recovering → verifying → completed"""
+        state = RecoveryStatus.CREATED
+        state = recovery_fsm.transition(state, RecoveryStatus.DIAGNOSING)
+        state = recovery_fsm.transition(state, RecoveryStatus.RECOVERING)
+        state = recovery_fsm.transition(state, RecoveryStatus.VERIFYING)
+        state = recovery_fsm.transition(state, RecoveryStatus.RECOVERING)
+        state = recovery_fsm.transition(state, RecoveryStatus.VERIFYING)
+        state = recovery_fsm.transition(state, RecoveryStatus.COMPLETED)
+        assert recovery_fsm.is_terminal(state)
+
+    def test_all_7_states(self):
+        assert len(recovery_fsm.get_all_states()) == 7

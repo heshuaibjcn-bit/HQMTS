@@ -1,16 +1,18 @@
 """Tests for Cash Reservation Manager."""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import timedelta
 from decimal import Decimal
 
 from hqmts.core.enums import ReservationStatus
 from hqmts.core.exceptions import InsufficientFundsError
+from hqmts.core.types import now_shanghai
 from hqmts.domain.reservation import CashReservation
 
 
 class TestCashReservation:
     def test_remaining_amount(self):
+        now = now_shanghai()
         r = CashReservation(
             reservation_id="r1",
             account_id="acc1",
@@ -18,52 +20,56 @@ class TestCashReservation:
             reserved_amount=Decimal("10000"),
             consumed_amount=Decimal("3000"),
             status=ReservationStatus.ACTIVE,
-            expires_at=datetime.now() + timedelta(minutes=2),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            expires_at=now + timedelta(minutes=2),
+            created_at=now,
+            updated_at=now,
         )
         assert r.remaining_amount == Decimal("7000")
 
     def test_is_active(self):
+        now = now_shanghai()
         r = CashReservation(
             reservation_id="r1",
             account_id="acc1",
             strategy_instance_id="strat1",
             reserved_amount=Decimal("10000"),
             status=ReservationStatus.ACTIVE,
-            expires_at=datetime.now() + timedelta(minutes=2),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            expires_at=now + timedelta(minutes=2),
+            created_at=now,
+            updated_at=now,
         )
         assert r.is_active()
 
     def test_is_not_active_when_expired(self):
+        now = now_shanghai()
         r = CashReservation(
             reservation_id="r1",
             account_id="acc1",
             strategy_instance_id="strat1",
             reserved_amount=Decimal("10000"),
             status=ReservationStatus.ACTIVE,
-            expires_at=datetime.now() - timedelta(minutes=1),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            expires_at=now - timedelta(minutes=1),
+            created_at=now,
+            updated_at=now,
         )
         assert not r.is_active()
 
     def test_is_not_active_when_released(self):
+        now = now_shanghai()
         r = CashReservation(
             reservation_id="r1",
             account_id="acc1",
             strategy_instance_id="strat1",
             reserved_amount=Decimal("10000"),
             status=ReservationStatus.RELEASED,
-            expires_at=datetime.now() + timedelta(minutes=2),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            expires_at=now + timedelta(minutes=2),
+            created_at=now,
+            updated_at=now,
         )
         assert not r.is_active()
 
     def test_can_consume(self):
+        now = now_shanghai()
         r = CashReservation(
             reservation_id="r1",
             account_id="acc1",
@@ -71,23 +77,24 @@ class TestCashReservation:
             reserved_amount=Decimal("10000"),
             consumed_amount=Decimal("3000"),
             status=ReservationStatus.ACTIVE,
-            expires_at=datetime.now() + timedelta(minutes=2),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            expires_at=now + timedelta(minutes=2),
+            created_at=now,
+            updated_at=now,
         )
         assert r.can_consume(Decimal("5000"))
         assert not r.can_consume(Decimal("8000"))
 
     def test_cannot_consume_when_not_active(self):
+        now = now_shanghai()
         r = CashReservation(
             reservation_id="r1",
             account_id="acc1",
             strategy_instance_id="strat1",
             reserved_amount=Decimal("10000"),
             status=ReservationStatus.RELEASED,
-            expires_at=datetime.now() + timedelta(minutes=2),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
+            expires_at=now + timedelta(minutes=2),
+            created_at=now,
+            updated_at=now,
         )
         assert not r.can_consume(Decimal("100"))
 

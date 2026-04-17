@@ -74,12 +74,12 @@ class TestRecoverySession:
         assert len(session["steps"]) == 14
 
     @pytest.mark.asyncio
-    async def test_uncertain_orders_flagged(self, service: RecoveryService):
+    async def test_error_orders_flagged(self, service: RecoveryService):
         ctx = RecoveryContext(
             account_id="acc-001",
             strategy_instance_id="strat-001",
             trigger_reason="crash",
-            has_uncertain_orders=True,
+            has_error_orders=True,
         )
         session = await service.create_recovery_session(ctx)
         reconcile_step = session["steps"][6]  # step 7 (0-indexed)

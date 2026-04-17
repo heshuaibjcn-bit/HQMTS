@@ -34,17 +34,17 @@ class TestCycle:
 class TestOrderStatus:
     def test_all_states(self):
         expected = {
-            "created", "submitting", "submitted", "accepted",
-            "partially_filled", "filled", "cancel_pending",
-            "canceled", "rejected", "expired", "uncertain",
+            "pending", "submitted", "accepted",
+            "partial_filled", "filled",
+            "canceled", "rejected", "error", "suspended", "expired",
         }
         actual = {s.value for s in OrderStatus}
         assert actual == expected
 
 
 class TestRejectReason:
-    def test_all_14_types(self):
-        assert len(RejectReason) == 14
+    def test_all_19_types(self):
+        assert len(RejectReason) == 19
 
     def test_specific_reasons(self):
         assert RejectReason.NETWORK_ERROR.value == "network_error"
