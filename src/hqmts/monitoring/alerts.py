@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from hqmts.core.enums import AlertLevel
+from hqmts.core.types import now_shanghai
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class Alert:
     value: float
     threshold: float
     message: str
-    detected_at: datetime = field(default_factory=datetime.now)
+    detected_at: datetime = field(default_factory=now_shanghai)
     routing_target: str = ""
     acknowledged: bool = False
 

@@ -178,6 +178,8 @@ class RejectHandler:
             "exchange": RejectReason.EXCHANGE_REJECT,
             "untradable": RejectReason.MARKET_UNTRADABLE,
             "suspended": RejectReason.MARKET_UNTRADABLE,
+            "rate limit": RejectReason.ORDER_FREQUENCY_EXCEEDED,
+            "frequency": RejectReason.ORDER_FREQUENCY_EXCEEDED,
             "limit": RejectReason.PRICE_OUT_OF_LIMIT,
             "cash": RejectReason.INSUFFICIENT_CASH,
             "fund": RejectReason.INSUFFICIENT_CASH,
@@ -196,8 +198,6 @@ class RejectHandler:
             "market closed": RejectReason.MARKET_CLOSED,
             "market_closed": RejectReason.MARKET_CLOSED,
             "trading hours": RejectReason.MARKET_CLOSED,
-            "frequency": RejectReason.ORDER_FREQUENCY_EXCEEDED,
-            "rate limit": RejectReason.ORDER_FREQUENCY_EXCEEDED,
         }
 
         for keyword, reason in classification_map.items():

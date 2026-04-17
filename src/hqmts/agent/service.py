@@ -476,7 +476,12 @@ class AgentGovernanceService:
             await self._wait_task(task.agent_task_id)
 
             # If approver provided, auto-approve for testing
-            # Guard: auto-approve only allowed in non-Live environments
+            # Guard: auto-approve only allowed in non-Live environments.
+            # SECURITY NOTE: The `approver` parameter is a plain string with no
+            # identity verification. This is acceptable for testing/internal use
+            # in paper/research environments. Before production use, validate the
+            # approver identity against an actual identity service or require a
+            # cryptographic token.
             if approver and environment != Environment.LIVE.value:
                 approval = await self.process_approval_decision(
                     approval_request_id=approval.approval_request_id,

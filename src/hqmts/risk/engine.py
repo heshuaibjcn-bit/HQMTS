@@ -13,7 +13,7 @@ from decimal import Decimal
 from pydantic import BaseModel, Field
 
 from hqmts.core.enums import RiskLayer, RiskResultType
-from hqmts.core.types import RiskCheckId
+from hqmts.core.types import RiskCheckId, now_shanghai
 from hqmts.domain.risk import RiskCheckResult
 
 
@@ -43,7 +43,7 @@ class RiskContext(BaseModel):
     instrument_daily_pnl: Decimal = Decimal("0")
     existing_order_count_last_min: int = 0
     is_flatten: bool = False  # Whether this is a force_flatten action
-    check_time: datetime = Field(default_factory=datetime.now)
+    check_time: datetime = Field(default_factory=now_shanghai)
     # Market-level data
     index_drop_pct: Decimal = Decimal("0")  # Current index change percentage
     market_volatility: Decimal = Decimal("0")  # Current market-wide volatility

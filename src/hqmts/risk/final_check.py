@@ -17,6 +17,7 @@ from hqmts.core.enums import (
     StrategyStatus,
 )
 from hqmts.core.exceptions import KillSwitchActiveError
+from hqmts.core.types import now_shanghai
 
 
 @dataclass
@@ -72,7 +73,7 @@ class FinalCheckContext:
 
     # Additional
     is_flatten: bool = False
-    check_time: datetime = field(default_factory=datetime.now)
+    check_time: datetime = field(default_factory=now_shanghai)
     stale_price_threshold_seconds: int = 30
     reference_price_age_seconds: float = 0.0
 
