@@ -88,21 +88,21 @@ class TestBacktestRunner:
     @pytest.mark.asyncio
     async def test_run_backtest_no_bars(self):
         runner = BacktestRunner(db_session=None)
-        result = await runner.run_backtest(
-            strategy_name="dual_ma",
-            strategy_params={"fast_period": 3, "slow_period": 5},
-            instruments=["000001.SZ"],
-            cycle="5m",
-            start_date="20240102",
-            end_date="20240103",
-        )
-        assert result.total_trades == 0
+        with pytest.raises(ValueError, match="No bar data"):
+            await runner.run_backtest(
+                strategy_name="dual_ma",
+                strategy_params={"fast_period": 3, "slow_period": 5},
+                instruments=["000001.SZ"],
+                cycle="5m",
+                start_date="20240102",
+                end_date="20240103",
+            )
 
     @pytest.mark.asyncio
     async def test_parameter_sweep(self):
         runner = BacktestRunner(db_session=None)
         bars = _golden_cross_bars()
-        results = await runner.run_parameter_sweep(
+        sweep = await runner.run_parameter_sweep(
             strategy_name="dual_ma",
             param_grid={"fast_period": [3, 5], "slow_period": [10, 15]},
             instruments=["000001.SZ"],
@@ -111,16 +111,17 @@ class TestBacktestRunner:
             end_date="20240103",
             bars_by_instrument={"000001.SZ": bars},
         )
-        assert len(results) == 4  # 2 x 2 combinations
+        assert len(sweep.results) == 4  # 2 x 2 combinations
         # Results sorted by total_return descending
-        for i in range(len(results) - 1):
-            assert results[i].total_return >= results[i + 1].total_return
+        for i in range(len(sweep.results) - 1):
+            assert sweep.results[i].total_return >= sweep.results[i + 1].total_return
+        assert sweep.failed_runs == 0
 
     @pytest.mark.asyncio
     async def test_parameter_sweep_single_param(self):
         runner = BacktestRunner(db_session=None)
         bars = _golden_cross_bars()
-        results = await runner.run_parameter_sweep(
+        sweep = await runner.run_parameter_sweep(
             strategy_name="dual_ma",
             param_grid={"fast_period": [3, 5, 7]},
             instruments=["000001.SZ"],
@@ -129,7 +130,7 @@ class TestBacktestRunner:
             end_date="20240103",
             bars_by_instrument={"000001.SZ": bars},
         )
-        assert len(results) == 3
+        assert len(sweep.results) == 3
 
     @pytest.mark.asyncio
     async def test_parameter_sweep_unknown_strategy(self):

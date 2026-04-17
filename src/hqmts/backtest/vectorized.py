@@ -45,6 +45,7 @@ class VectorizedBacktester:
         commission_min: Decimal = Decimal("5"),
         stamp_tax_rate: Decimal = Decimal("0.001"),
         lot_size: int = 100,
+        cycle_minutes: int = 5,
     ) -> VectorizedResult:
         """Run a vectorized dual MA crossover backtest.
 
@@ -57,6 +58,7 @@ class VectorizedBacktester:
             commission_min: Minimum commission per trade.
             stamp_tax_rate: Stamp tax rate on sells.
             lot_size: Share lot size (100 for A-shares).
+            cycle_minutes: Bar cycle in minutes (1, 5, 15, 30, 60). Default 5.
 
         Returns:
             VectorizedResult with calculated metrics.
@@ -99,8 +101,8 @@ class VectorizedBacktester:
         trades: list[dict] = []  # {"side": "buy"/"sell", "price": float, "quantity": int}
         portfolio_values: list[float] = []
 
-        # Simple day boundary: every 48 bars (240 min / 5 min = 48 bars/day)
-        bars_per_day = 48
+        # Day boundary: 240 trading minutes per day, divided by cycle length
+        bars_per_day = 240 // cycle_minutes
 
         for i in range(n):
             # Day boundary check for T+1 reset
@@ -146,7 +148,7 @@ class VectorizedBacktester:
         # Calculate metrics
         total_return = self._calc_total_return(float(initial_cash), final_value)
         max_drawdown = self._calc_max_drawdown(portfolio_values)
-        sharpe = self._calc_sharpe(portfolio_values)
+        sharpe = self._calc_sharpe(portfolio_values, bars_per_day)
         win_rate, profit_factor, total_trades_count = self._calc_trade_stats(trades)
 
         return VectorizedResult(
@@ -192,7 +194,7 @@ class VectorizedBacktester:
         return max_dd
 
     @staticmethod
-    def _calc_sharpe(portfolio_values: list[float]) -> float:
+    def _calc_sharpe(portfolio_values: list[float], bars_per_day: int = 48) -> float:
         if len(portfolio_values) < 2:
             return 0.0
         returns = np.diff(portfolio_values) / np.array(portfolio_values[:-1])
@@ -203,8 +205,8 @@ class VectorizedBacktester:
         std = np.std(returns, ddof=1)
         if std == 0:
             return 0.0
-        # Annualize: assuming 48 bars/day, 252 trading days
-        bars_per_year = 48 * 252
+        # Annualize: assuming bars_per_day bars/day, 252 trading days
+        bars_per_year = bars_per_day * 252
         return mean * np.sqrt(bars_per_year) / std
 
     @staticmethod

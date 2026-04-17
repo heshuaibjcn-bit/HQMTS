@@ -5,13 +5,14 @@ from __future__ import annotations
 import itertools
 import logging
 import uuid
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hqmts.backtest.engine import BacktestConfig, BacktestEngine
-from hqmts.backtest.registry import STRATEGY_REGISTRY as _STRATEGY_REGISTRY
+from hqmts.backtest.registry import CYCLE_MAP, STRATEGY_REGISTRY as _STRATEGY_REGISTRY
 from hqmts.backtest.result import BacktestResult
 from hqmts.backtest.strategy import StrategyTemplate
 from hqmts.core.enums import Cycle
@@ -19,6 +20,13 @@ from hqmts.core.types import InstrumentId
 from hqmts.domain.instrument import Instrument
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SweepResult:
+    """Container for parameter sweep results."""
+    results: list[BacktestResult]
+    failed_runs: int
 
 
 class BacktestRunner:
@@ -69,8 +77,7 @@ class BacktestRunner:
         ]
 
         # Cycle mapping
-        cycle_map = {"1m": Cycle.M1, "5m": Cycle.M5, "15m": Cycle.M15, "30m": Cycle.M30, "60m": Cycle.M60}
-        resolved_cycle = cycle_map.get(cycle, Cycle.M5)
+        resolved_cycle = CYCLE_MAP.get(cycle, Cycle.M5)
 
         # Run engine
         config = BacktestConfig(
@@ -87,6 +94,8 @@ class BacktestRunner:
 
         engine = BacktestEngine(config)
         bars = bars_by_instrument or {}
+        if not bars:
+            raise ValueError("No bar data provided. Supply bars_by_instrument for the target instruments.")
         result = engine.run(bars)
 
         # Persist if session available
@@ -113,10 +122,10 @@ class BacktestRunner:
         end_date: str,
         initial_cash: Decimal = Decimal("1000000"),
         bars_by_instrument: dict[str, list] | None = None,
-    ) -> list[BacktestResult]:
+    ) -> SweepResult:
         """Run backtests for every parameter combination in the grid.
 
-        Returns results sorted by total_return descending.
+        Returns SweepResult with results sorted by total_return descending.
         """
         if strategy_name not in _STRATEGY_REGISTRY:
             raise ValueError(f"Unknown strategy: {strategy_name}. Available: {list(_STRATEGY_REGISTRY.keys())}")
@@ -165,4 +174,4 @@ class BacktestRunner:
 
         # Sort by total_return descending
         results.sort(key=lambda r: r.total_return, reverse=True)
-        return results
+        return SweepResult(results=results, failed_runs=len(errors))

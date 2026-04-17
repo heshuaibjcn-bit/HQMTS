@@ -10,6 +10,7 @@ from decimal import Decimal
 
 from hqmts.backtest.context import StrategyContext
 from hqmts.backtest.order import BacktestOrder
+from hqmts.backtest.registry import CYCLE_MINUTES_MAP
 from hqmts.core.enums import Cycle, Side, SignalType, TargetDirection
 from hqmts.core.types import DecisionSnapshotId, InstrumentId, SignalId, StrategyInstanceId, VersionStr
 from hqmts.domain.bar import Bar
@@ -163,5 +164,4 @@ class DualMACrossoverStrategy(StrategyTemplate):
 
 def _cycle_to_minutes(cycle: Cycle) -> int:
     """Convert Cycle enum to minutes."""
-    mapping = {Cycle.M1: 1, Cycle.M5: 5, Cycle.M15: 15, Cycle.M30: 30, Cycle.M60: 60}
-    return mapping[cycle]
+    return CYCLE_MINUTES_MAP[cycle.value]

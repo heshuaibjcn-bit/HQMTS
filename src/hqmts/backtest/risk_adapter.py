@@ -42,6 +42,12 @@ def build_risk_context(
     if pos and total_asset > 0:
         position_ratio = pos.market_value / total_asset if pos.market_value > 0 else Decimal("0")
 
+    logger.debug(
+        "build_risk_context: defaulted fields strategy_status=paper_running, "
+        "price=%s (from limit_price or 0), instrument=%s",
+        order.limit_price or "0", instrument_id,
+    )
+
     return RiskContext(
         signal_id=order.signal_id or None,
         instrument_id=instrument_id,

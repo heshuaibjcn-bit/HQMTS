@@ -91,6 +91,7 @@ class BacktestEngine:
             self._risk_adapter = SyncRiskAdapter(config.risk_engine)
         else:
             self._risk_adapter = SyncRiskAdapter(None)
+        self._has_run = False
 
     def run(self, bars_by_instrument: dict[str, list[Bar]]) -> BacktestResult:
         """Run backtest with provided bar data.
@@ -102,6 +103,9 @@ class BacktestEngine:
         Returns:
             BacktestResult with all performance metrics.
         """
+        if self._has_run:
+            raise RuntimeError("BacktestEngine.run() has already been called. Create a new engine instance.")
+        self._has_run = True
         config = self._config
 
         # Initialize strategy

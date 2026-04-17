@@ -6,12 +6,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field, model_validator
 
 from hqmts.api.deps import get_db
-from hqmts.backtest.registry import STRATEGY_REGISTRY as _STRATEGY_REGISTRY
+from hqmts.backtest.registry import CYCLE_MAP, CYCLE_MINUTES_MAP, VALID_CYCLE_STRINGS, STRATEGY_REGISTRY as _STRATEGY_REGISTRY
 from hqmts.db.repositories.backtest_repo import BacktestResultRepository
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
@@ -35,6 +34,14 @@ class BacktestRunRequest(BaseModel):
         default_factory=dict,
         description="Optional pre-loaded bar data. If empty, runs with no bars (empty result).",
     )
+
+    @model_validator(mode="after")
+    def _validate_fields(self) -> "BacktestRunRequest":
+        if self.cycle not in VALID_CYCLE_STRINGS:
+            raise ValueError(f"Invalid cycle '{self.cycle}'. Must be one of: {sorted(VALID_CYCLE_STRINGS)}")
+        if self.start_date >= self.end_date:
+            raise ValueError(f"start_date ({self.start_date}) must be before end_date ({self.end_date})")
+        return self
 
 
 class BacktestSummaryResponse(BaseModel):
@@ -72,7 +79,8 @@ class BacktestSweepRequest(BaseModel):
     """Request to run a parameter sweep."""
 
     strategy_name: str = Field(min_length=1, max_length=64)
-    param_grid: dict[str, list[Any]] = Field(min_length=1)
+    param_grid: dict[str, list[Any]] = Field(min_length=1, max_length=10,
+        description="Parameter grid. Max 10 keys, max 100 values per key.")
     instruments: list[str] = Field(min_length=1)
     cycle: str = Field(default="5m")
     start_date: str = Field(pattern=r"^\d{8}$")
@@ -80,12 +88,26 @@ class BacktestSweepRequest(BaseModel):
     initial_cash: Decimal = Field(default=Decimal("1000000"))
     bars: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
+    @model_validator(mode="after")
+    def _validate_fields(self) -> "BacktestSweepRequest":
+        if self.cycle not in VALID_CYCLE_STRINGS:
+            raise ValueError(f"Invalid cycle '{self.cycle}'. Must be one of: {sorted(VALID_CYCLE_STRINGS)}")
+        if self.start_date >= self.end_date:
+            raise ValueError(f"start_date ({self.start_date}) must be before end_date ({self.end_date})")
+        if len(self.param_grid) > 10:
+            raise ValueError(f"param_grid has {len(self.param_grid)} keys, max is 10")
+        for key, values in self.param_grid.items():
+            if len(values) > 100:
+                raise ValueError(f"param_grid['{key}'] has {len(values)} values, max is 100")
+        return self
+
 
 class BacktestSweepResponse(BaseModel):
     """Response from a parameter sweep."""
 
     sweep_id: str
     total_runs: int
+    failed_runs: int = 0
     results: list[BacktestSummaryResponse]
 
 
@@ -151,8 +173,7 @@ async def run_backtest(
         from hqmts.core.types import InstrumentId, VersionStr
         from hqmts.domain.bar import Bar
 
-        cycle_map = {"1m": Cycle.M1, "5m": Cycle.M5, "15m": Cycle.M15, "30m": Cycle.M30, "60m": Cycle.M60}
-        cycle = cycle_map.get(request.cycle, Cycle.M5)
+        cycle = CYCLE_MAP[request.cycle]
 
         for iid, raw_bars in request.bars.items():
             built_bars: list[Bar] = []
@@ -163,7 +184,7 @@ async def run_backtest(
                 if end:
                     end = datetime.fromisoformat(end) if isinstance(end, str) else end
                 else:
-                    mins = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}.get(request.cycle, 5)
+                    mins = CYCLE_MINUTES_MAP[request.cycle]
                     end = start + timedelta(minutes=mins)
 
                 built_bars.append(Bar(
@@ -200,30 +221,31 @@ async def run_backtest(
     from hqmts.backtest.engine import BacktestConfig, BacktestEngine
     from hqmts.core.enums import Cycle
 
-    cycle_map = {"1m": Cycle.M1, "5m": Cycle.M5, "15m": Cycle.M15, "30m": Cycle.M30, "60m": Cycle.M60}
     config = BacktestConfig(
         strategy=strategy_class(),
         strategy_name=request.strategy_name,
         strategy_version=request.strategy_version,
         strategy_params=merged_params,
         instruments=instruments,
-        cycle=cycle_map.get(request.cycle, Cycle.M5),
+        cycle=CYCLE_MAP[request.cycle],
         start_date=request.start_date,
         end_date=request.end_date,
         initial_cash=request.initial_cash,
     )
 
     engine = BacktestEngine(config)
-    result = engine.run(bars_by_instrument)
+    try:
+        result = engine.run(bars_by_instrument)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # Persist result
+    # Persist result (get_db handles commit/rollback)
     try:
         repo = BacktestResultRepository(db)
         await repo.save(result)
-        await db.commit()
     except Exception:
-        await db.rollback()
         # Return result even if persist fails
+        pass
 
     return _result_to_response(result)
 
@@ -246,8 +268,7 @@ async def run_parameter_sweep(
         from hqmts.core.types import InstrumentId, VersionStr
         from hqmts.domain.bar import Bar
 
-        cycle_map = {"1m": Cycle.M1, "5m": Cycle.M5, "15m": Cycle.M15, "30m": Cycle.M30, "60m": Cycle.M60}
-        cycle = cycle_map.get(request.cycle, Cycle.M5)
+        cycle = CYCLE_MAP[request.cycle]
 
         for iid, raw_bars in request.bars.items():
             built_bars: list[Bar] = []
@@ -258,7 +279,7 @@ async def run_parameter_sweep(
                 if end:
                     end = datetime.fromisoformat(end) if isinstance(end, str) else end
                 else:
-                    mins = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "60m": 60}.get(request.cycle, 5)
+                    mins = CYCLE_MINUTES_MAP[request.cycle]
                     end = start + timedelta(minutes=mins)
 
                 built_bars.append(Bar(
@@ -279,21 +300,25 @@ async def run_parameter_sweep(
             bars_by_instrument[iid] = built_bars
 
     runner = BacktestRunner(db_session=db)
-    results = await runner.run_parameter_sweep(
-        strategy_name=request.strategy_name,
-        param_grid=request.param_grid,
-        instruments=request.instruments,
-        cycle=request.cycle,
-        start_date=request.start_date,
-        end_date=request.end_date,
-        initial_cash=request.initial_cash,
-        bars_by_instrument=bars_by_instrument,
-    )
+    try:
+        sweep = await runner.run_parameter_sweep(
+            strategy_name=request.strategy_name,
+            param_grid=request.param_grid,
+            instruments=request.instruments,
+            cycle=request.cycle,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            initial_cash=request.initial_cash,
+            bars_by_instrument=bars_by_instrument,
+        )
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return BacktestSweepResponse(
         sweep_id=str(__import__("uuid").uuid4()),
-        total_runs=len(results),
-        results=[_result_to_response(r) for r in results],
+        total_runs=len(sweep.results),
+        failed_runs=sweep.failed_runs,
+        results=[_result_to_response(r) for r in sweep.results],
     )
 
 
@@ -336,7 +361,7 @@ async def get_backtest_result(
 @router.get("/", response_model=list[BacktestSummaryResponse])
 async def list_backtest_results(
     strategy_name: str | None = None,
-    limit: int = 20,
+    limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> Any:
     """List recent backtest results, optionally filtered by strategy."""

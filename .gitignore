@@ -19,3 +19,4 @@ build/
 htmlcov/
 .coverage
 coverage.xml
+.gstack/

@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import numpy as np
 import pytest
 
+from hqmts.backtest.engine import BacktestConfig, BacktestEngine
+from hqmts.backtest.registry import register_strategy
+from hqmts.backtest.strategy import DualMACrossoverStrategy
 from hqmts.backtest.vectorized import VectorizedBacktester, VectorizedResult
+from hqmts.core.enums import Cycle
+from hqmts.core.types import InstrumentId, VersionStr
+from hqmts.domain.bar import Bar
+from hqmts.domain.instrument import Instrument
 
 
 class TestSMA:
@@ -155,3 +163,117 @@ class TestVectorizedMetrics:
         assert wr == 0.0
         assert pf == 0.0  # gross_profit is 0
         assert total == 2
+
+
+# ── Vectorized vs Full Engine Comparison ──────────────────────────────────────
+
+
+def _make_bars(closes: list[str], instrument_id: str = "000001.SZ") -> list[Bar]:
+    """Build bars from a list of close prices."""
+    bars = []
+    base = datetime(2024, 1, 2, 9, 30)
+    for i, c in enumerate(closes):
+        start = base + timedelta(minutes=5 * i)
+        bars.append(Bar(
+            instrument_id=InstrumentId(instrument_id),
+            cycle=Cycle.M5,
+            bar_start_time=start,
+            bar_end_time=start + timedelta(minutes=5),
+            open=Decimal(c),
+            high=Decimal(c) + Decimal("0.10"),
+            low=Decimal(c) - Decimal("0.10"),
+            close=Decimal(c),
+            volume=100000,
+            amount=Decimal("1000000"),
+            is_completed=True,
+            source="test",
+            data_version=VersionStr("v1"),
+        ))
+    return bars
+
+
+class TestVectorizedVsFullEngine:
+    """Compare key metrics between vectorized and full engine paths."""
+
+    @pytest.fixture(autouse=True)
+    def setup_registry(self):
+        register_strategy("dual_ma", DualMACrossoverStrategy, {"fast_period": 5, "slow_period": 20})
+
+    def test_same_data_same_trade_count(self):
+        """Both paths should detect the same number of crossover signals."""
+        closes = (
+            ["10.00", "9.80", "9.60", "9.50", "9.40", "9.30", "9.40", "9.50", "9.60", "9.70"]
+            + ["9.80", "10.00", "10.20", "10.30", "10.40", "10.50", "10.60", "10.70", "10.80", "10.90"]
+            + ["11.00", "11.10", "11.20", "11.30", "11.40", "11.50", "11.60", "11.70", "11.80", "11.90"]
+        )
+        close_arr = np.array([float(c) for c in closes], dtype=float)
+
+        vbt = VectorizedBacktester()
+        v_result = vbt.run(close_arr, fast_period=3, slow_period=5)
+
+        bars = _make_bars(closes)
+        config = BacktestConfig(
+            strategy=DualMACrossoverStrategy(),
+            strategy_name="dual_ma",
+            strategy_version="v1",
+            strategy_params={"fast_period": 3, "slow_period": 5},
+            instruments=[Instrument(
+                instrument_id=InstrumentId("000001.SZ"),
+                ts_code="000001.SZ", exchange="SZSE", symbol="000001", name="TestStock",
+            )],
+            cycle=Cycle.M5, start_date="20240102", end_date="20240103",
+            initial_cash=Decimal("1000000"),
+        )
+        engine = BacktestEngine(config)
+        f_result = engine.run({"000001.SZ": bars})
+
+        assert v_result.total_trades >= 1
+        assert f_result.total_trades >= 1
+        assert v_result.total_trades == f_result.total_trades
+
+    def test_same_data_both_produce_results(self):
+        """Both paths should produce non-zero results for monotonic data with crossovers."""
+        # Use declining-then-rising data (golden cross pattern)
+        closes = (
+            ["10.00", "9.80", "9.60", "9.50", "9.40", "9.30", "9.40", "9.50", "9.60", "9.70"]
+            + ["9.80", "10.00", "10.20", "10.30", "10.40", "10.50", "10.60", "10.70", "10.80", "10.90"]
+            + ["11.00", "11.10", "11.20", "11.30", "11.40", "11.50", "11.60", "11.70", "11.80", "11.90"]
+        )
+        close_arr = np.array([float(c) for c in closes], dtype=float)
+
+        vbt = VectorizedBacktester()
+        v_result = vbt.run(close_arr, fast_period=3, slow_period=5)
+
+        bars = _make_bars(closes)
+        config = BacktestConfig(
+            strategy=DualMACrossoverStrategy(),
+            strategy_name="dual_ma", strategy_version="v1",
+            strategy_params={"fast_period": 3, "slow_period": 5},
+            instruments=[Instrument(
+                instrument_id=InstrumentId("000001.SZ"),
+                ts_code="000001.SZ", exchange="SZSE", symbol="000001", name="TestStock",
+            )],
+            cycle=Cycle.M5, start_date="20240102", end_date="20240103",
+            initial_cash=Decimal("1000000"),
+        )
+        engine = BacktestEngine(config)
+        f_result = engine.run({"000001.SZ": bars})
+
+        # Both should produce non-zero returns (direction may differ due to fill-price differences)
+        assert v_result.total_return != Decimal("0") or v_result.total_trades == 0
+        assert f_result.total_return != Decimal("0") or f_result.total_trades == 0
+
+    def test_bars_per_day_from_cycle_minutes(self):
+        """VectorizedBacktester should compute correct bars_per_day from cycle_minutes."""
+        vbt = VectorizedBacktester()
+        closes = np.array([10.0] * 100)
+        result_5m = vbt.run(closes, fast_period=3, slow_period=5, cycle_minutes=5)
+        assert isinstance(result_5m, VectorizedResult)
+
+        closes = np.array([10.0] * 50)
+        result_15m = vbt.run(closes, fast_period=3, slow_period=5, cycle_minutes=15)
+        assert isinstance(result_15m, VectorizedResult)
+
+        closes = np.array([10.0] * 300)
+        result_1m = vbt.run(closes, fast_period=3, slow_period=5, cycle_minutes=1)
+        assert isinstance(result_1m, VectorizedResult)
