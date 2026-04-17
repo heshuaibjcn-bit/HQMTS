@@ -151,8 +151,8 @@ class AgentGovernanceService:
             target_object_id=target_object_id,
             proposal_payload=proposal_payload,
             confidence=confidence,
+            status=ProposalStatus.DRAFTED,
             policy_result="",
-            approval_status="",
             created_at=now,
         )
         return await self._proposal_repo.create_domain(proposal)
@@ -193,9 +193,9 @@ class AgentGovernanceService:
             target_status = ProposalStatus.PENDING_APPROVAL
         else:
             target_status = ProposalStatus.APPROVED
-        proposal.approval_status = agent_proposal_fsm.transition(
+        proposal.status = agent_proposal_fsm.transition(
             ProposalStatus.POLICY_CHECKING, target_status,
-        ).value
+        )
 
         return await self._proposal_repo.update_domain(proposal)
 
@@ -335,13 +335,13 @@ class AgentGovernanceService:
             proposal = await self._proposal_repo.get_domain(approval.source_id)
             if proposal is not None:
                 if decision == ApprovalStatus.APPROVED.value:
-                    proposal.approval_status = agent_proposal_fsm.transition(
+                    proposal.status = agent_proposal_fsm.transition(
                         ProposalStatus.PENDING_APPROVAL, ProposalStatus.APPROVED,
-                    ).value
+                    )
                 elif decision == ApprovalStatus.REJECTED.value:
-                    proposal.approval_status = agent_proposal_fsm.transition(
+                    proposal.status = agent_proposal_fsm.transition(
                         ProposalStatus.PENDING_APPROVAL, ProposalStatus.REJECTED,
-                    ).value
+                    )
                 await self._proposal_repo.update_domain(proposal)
 
         return approval
@@ -358,17 +358,17 @@ class AgentGovernanceService:
         if proposal is None:
             raise ValueError(f"Proposal {proposal_id} not found")
 
-        if proposal.approval_status != ProposalStatus.APPROVED.value:
+        if proposal.status != ProposalStatus.APPROVED:
             raise AgentPermissionDeniedError(
                 agent_role="system",
                 tool_name="execute_proposal",
-                reason=f"Proposal {proposal_id} not approved (status: {proposal.approval_status})",
+                reason=f"Proposal {proposal_id} not approved (status: {proposal.status.value})",
             )
 
         # Transition proposal: approved -> execution_pending
-        proposal.approval_status = agent_proposal_fsm.transition(
+        proposal.status = agent_proposal_fsm.transition(
             ProposalStatus.APPROVED, ProposalStatus.EXECUTION_PENDING,
-        ).value
+        )
         await self._proposal_repo.update_domain(proposal)
 
         now = now_shanghai()

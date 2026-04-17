@@ -152,7 +152,7 @@ class TestAgentGovernanceService:
             environment=Environment.RESEARCH.value,
         )
         assert proposal.policy_result == PolicyCheckResult.PASS.value
-        assert proposal.approval_status == ProposalStatus.APPROVED.value
+        assert proposal.status == ProposalStatus.APPROVED
         await session.commit()
 
         # Step 5: Execute
@@ -222,7 +222,7 @@ class TestAgentGovernanceService:
 
         # Verify proposal is now rejected
         proposal = await service._proposal_repo.get_domain(proposal.proposal_id)
-        assert proposal.approval_status == ProposalStatus.REJECTED.value
+        assert proposal.status == ProposalStatus.REJECTED
 
         # Execution should fail
         from hqmts.core.exceptions import AgentPermissionDeniedError

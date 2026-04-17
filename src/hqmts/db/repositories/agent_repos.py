@@ -128,9 +128,9 @@ class AgentProposalRepository(BaseRepository[AgentProposalORM]):
             target_object_id=orm.target_object_id,
             proposal_payload=orm.proposal_payload,
             confidence=orm.confidence,
+            status=ProposalStatus(orm.status),
             policy_result=orm.policy_result,
             policy_check_id=PolicyCheckId(orm.policy_check_id) if orm.policy_check_id else None,
-            approval_status=orm.approval_status,
             approval_request_id=orm.approval_request_id,
             executed_result=orm.executed_result,
             created_at=orm.created_at,
@@ -149,9 +149,9 @@ class AgentProposalRepository(BaseRepository[AgentProposalORM]):
             target_object_id=proposal.target_object_id,
             proposal_payload=proposal.proposal_payload,
             confidence=proposal.confidence,
+            status=proposal.status.value,
             policy_result=proposal.policy_result,
             policy_check_id=proposal.policy_check_id,
-            approval_status=proposal.approval_status,
             approval_request_id=proposal.approval_request_id,
             executed_result=proposal.executed_result,
             created_at=proposal.created_at,
@@ -166,7 +166,7 @@ class AgentProposalRepository(BaseRepository[AgentProposalORM]):
             raise ValueError(f"Proposal {proposal.proposal_id} not found")
         orm.policy_result = proposal.policy_result
         orm.policy_check_id = proposal.policy_check_id
-        orm.approval_status = proposal.approval_status
+        orm.status = proposal.status.value
         orm.approval_request_id = proposal.approval_request_id
         orm.executed_result = proposal.executed_result
         orm.updated_at = now_shanghai()

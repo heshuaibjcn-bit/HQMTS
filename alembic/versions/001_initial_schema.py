@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column('confidence', sa.Float(), nullable=False),
         sa.Column('policy_result', sa.String(24), nullable=False),
         sa.Column('policy_check_id', sa.String(64)),
-        sa.Column('approval_status', sa.String(20), nullable=False),
+        sa.Column('status', sa.String(24), nullable=False, server_default='drafted'),
         sa.Column('approval_request_id', sa.String(64)),
         sa.Column('executed_result', sa.Text(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
@@ -48,7 +48,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_ap_target", "agent_proposals", ['target_object_type', 'target_object_id'], unique=False)
     op.create_index("ix_ap_dedup", "agent_proposals", ['source_agent_task_id', 'proposal_type', 'target_object_id'], unique=True)
-    op.create_index("ix_ap_task_status", "agent_proposals", ['source_agent_task_id', 'approval_status'], unique=False)
+    op.create_index("ix_ap_task_status", "agent_proposals", ['source_agent_task_id', 'status'], unique=False)
 
     op.create_table('agent_tasks',
         sa.Column('agent_task_id', sa.String(64)),

@@ -13,7 +13,7 @@ from hqmts.db.base import Base, TimestampMixin
 class AgentProposalORM(Base, TimestampMixin):
     __tablename__ = "agent_proposals"
     __table_args__ = (
-        Index("ix_ap_task_status", "source_agent_task_id", "approval_status"),
+        Index("ix_ap_task_status", "source_agent_task_id", "status"),
         Index("ix_ap_target", "target_object_type", "target_object_id"),
         # Dedup: SAD 12.6 - source_agent_task_id + proposal_type + target_object_id
         Index(
@@ -34,6 +34,6 @@ class AgentProposalORM(Base, TimestampMixin):
     confidence: Mapped[float] = mapped_column(default=0.0)
     policy_result: Mapped[str] = mapped_column(String(24), default="")
     policy_check_id: Mapped[str] = mapped_column(String(64), nullable=True)
-    approval_status: Mapped[str] = mapped_column(String(20), default="")
+    status: Mapped[str] = mapped_column(String(24), default="drafted")
     approval_request_id: Mapped[str] = mapped_column(String(64), nullable=True)
     executed_result: Mapped[str] = mapped_column(Text, default="")
