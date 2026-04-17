@@ -6,6 +6,7 @@ from datetime import datetime
 
 from hqmts.agent.gateway import ToolCallRequest, ToolCallResult
 from hqmts.core.enums import SideEffectLevel
+from hqmts.core.types import now_shanghai
 from hqmts.domain.tool_invocation import ToolInvocation
 
 
@@ -30,7 +31,7 @@ def create_invocation_from_result(
         input_digest=str(hash(frozenset(request.parameters.items()))) if request.parameters else "",
         side_effect_level=actual_level,
         started_at=started_at,
-        finished_at=datetime.now(),
+        finished_at=now_shanghai(),
         status=result.status,
         error_code=result.error[:32] if result.error else "",
         policy_check_id=None,

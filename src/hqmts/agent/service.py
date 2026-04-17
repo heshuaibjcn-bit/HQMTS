@@ -44,6 +44,7 @@ from hqmts.domain.agent_proposal import AgentProposal
 from hqmts.domain.agent_task import AgentTask
 from hqmts.domain.approval_request import ApprovalRequest
 from hqmts.domain.controlled_execution import ControlledExecution
+from hqmts.core.types import now_shanghai
 
 
 class AgentGovernanceService:
@@ -83,7 +84,7 @@ class AgentGovernanceService:
         correlation_id: str | None = None,
     ) -> AgentTask:
         """Create a new agent task. Returns domain model."""
-        now = datetime.now()
+        now = now_shanghai()
         task = AgentTask(
             agent_task_id=AgentTaskId(str(uuid.uuid4())),
             agent_role=agent_role,
@@ -105,7 +106,7 @@ class AgentGovernanceService:
         if task is None:
             raise ValueError(f"Task {task_id} not found")
         task.status = AgentTaskStatus.RUNNING
-        task.started_at = datetime.now()
+        task.started_at = now_shanghai()
         return await self._task_repo.update_domain(task)
 
     # -- Step 2: Create Proposal -------------------------------------------
@@ -135,7 +136,7 @@ class AgentGovernanceService:
                 reason=f"Task {agent_task_id} in status {task.status.value} cannot produce proposals",
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         proposal = AgentProposal(
             proposal_id=ProposalId(str(uuid.uuid4())),
             proposal_type=proposal_type,
@@ -274,7 +275,7 @@ class AgentGovernanceService:
                 f"expected 'manual_review_required'"
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         approval = ApprovalRequest(
             approval_request_id=ApprovalRequestId(str(uuid.uuid4())),
             source_type="agent_proposal",
@@ -311,7 +312,7 @@ class AgentGovernanceService:
                 f"Approval request {approval_request_id} already decided: {approval.decision.value}"
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         approval.approver = approver
         approval.decision = ApprovalStatus(decision)
         approval.decision_reason = reason
@@ -350,7 +351,7 @@ class AgentGovernanceService:
                 reason=f"Proposal {proposal_id} not approved (status: {proposal.approval_status})",
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         execution = ControlledExecution(
             controlled_execution_id=ControlledExecutionId(str(uuid.uuid4())),
             source_proposal_id=ProposalId(proposal_id),
@@ -375,7 +376,7 @@ class AgentGovernanceService:
         if execution is None:
             raise ValueError(f"Execution {execution_id} not found")
 
-        now = datetime.now()
+        now = now_shanghai()
         execution.completed_at = now
 
         if failure_reason:
@@ -474,7 +475,7 @@ class AgentGovernanceService:
         """Mark task as completed."""
         task = await self._task_repo.get_domain(task_id)
         if task is not None:
-            now = datetime.now()
+            now = now_shanghai()
             task.status = AgentTaskStatus.COMPLETED
             task.completed_at = now
             await self._task_repo.update_domain(task)

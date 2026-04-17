@@ -20,6 +20,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Coroutine
 
+from hqmts.core.types import now_shanghai
+
 logger = logging.getLogger(__name__)
 
 # Stream names
@@ -39,7 +41,7 @@ class PipelineMessage:
     message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     payload: dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(
-        default_factory=lambda: datetime.now().isoformat(),
+        default_factory=lambda: now_shanghai().isoformat(),
     )
 
 

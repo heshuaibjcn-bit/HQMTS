@@ -13,6 +13,7 @@ from datetime import datetime
 from hqmts.core.enums import AlertLevel, Environment
 from hqmts.core.types import AuditEventId
 from hqmts.domain.audit import AuditEvent
+from hqmts.core.types import now_shanghai
 
 
 class AgentAuditService:
@@ -44,7 +45,7 @@ class AgentAuditService:
             action="create_task",
             details={"description": description},
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_policy_evaluation(
@@ -71,7 +72,7 @@ class AgentAuditService:
             },
             alert_level=AlertLevel.P3 if policy_result == "denied" else AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_proposal_submitted(
@@ -96,7 +97,7 @@ class AgentAuditService:
                 "proposal_type": proposal_type,
             },
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_approval_decision(
@@ -119,7 +120,7 @@ class AgentAuditService:
             details={"decision": decision, "reason": reason},
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_tool_invocation(
@@ -147,7 +148,7 @@ class AgentAuditService:
             },
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_controlled_execution(
@@ -171,7 +172,7 @@ class AgentAuditService:
             details=details or {"proposal_id": proposal_id, "outcome": outcome},
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_unauthorized_attempt(
@@ -193,7 +194,7 @@ class AgentAuditService:
             details={"reason": reason},
             alert_level=AlertLevel.P1,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
 
     def record_task_state_change(
@@ -217,5 +218,5 @@ class AgentAuditService:
             details={"from_state": from_state, "to_state": to_state, "reason": reason},
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )

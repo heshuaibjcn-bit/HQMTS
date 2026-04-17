@@ -16,6 +16,7 @@ from hqmts.core.types import AccountId, ReservationId, StrategyInstanceId
 from hqmts.db.models.reservation import CashReservationORM
 from hqmts.db.repositories.reservation_repo import ReservationRepository
 from hqmts.domain.reservation import CashReservation
+from hqmts.core.types import now_shanghai
 
 
 class ReservationManager:
@@ -90,7 +91,7 @@ class ReservationManager:
                 f"Requested {amount}, effective available {effective}"
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         reservation = CashReservation(
             reservation_id=ReservationId(str(uuid.uuid4())),
             account_id=account_id,
@@ -139,7 +140,7 @@ class ReservationManager:
                 f"Reservation {reservation_id} is not active (status: {reservation.status})"
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         new_consumed = reservation.consumed_amount + amount
         reservation.consumed_amount = new_consumed
         reservation.status = (
@@ -173,7 +174,7 @@ class ReservationManager:
         if reservation is None:
             raise ReservationExpiredError(f"Reservation {reservation_id} not found")
 
-        now = datetime.now()
+        now = now_shanghai()
         reservation.status = ReservationStatus.RELEASED.value
         reservation.released_reason = reason
         reservation.updated_at = now
@@ -195,10 +196,10 @@ class ReservationManager:
 
     async def expire_reservations(self) -> list[CashReservation]:
         """Release all expired reservations. Called periodically."""
-        expired = await self._repo.get_expired_reservations(datetime.now())
+        expired = await self._repo.get_expired_reservations(now_shanghai())
         results = []
         for res in expired:
-            now = datetime.now()
+            now = now_shanghai()
             res.status = ReservationStatus.EXPIRED.value
             res.updated_at = now
             await self._repo.update(res)
