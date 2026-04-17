@@ -42,6 +42,10 @@ ControlledExecutionId = NewType("ControlledExecutionId", str)
 PolicyCheckId = NewType("PolicyCheckId", str)
 CorrelationId = NewType("CorrelationId", str)
 
+# Next development phase IDs
+CorrectionEventId = NewType("CorrectionEventId", str)
+AdmissionId = NewType("AdmissionId", str)
+
 # ── Type Aliases ─────────────────────────────────────────────────────────────
 
 Price = Decimal

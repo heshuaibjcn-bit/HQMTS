@@ -364,3 +364,67 @@ class PolicyCheckResult(str, Enum):
     PASS = "pass"
     FAIL = "fail"
     MANUAL_REVIEW_REQUIRED = "manual_review_required"
+
+
+# ── Live Startup ─────────────────────────────────────────────────────────────
+
+
+class StartupStepStatus(str, Enum):
+    """Live startup step states (SAD 22.1)."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+# ── Force Flatten ────────────────────────────────────────────────────────────
+
+
+class FlattenTrigger(str, Enum):
+    """Force flatten trigger types (SAD 18.3)."""
+
+    KILL_SWITCH = "kill_switch"
+    MAX_DRAWDOWN = "max_drawdown"
+    MANUAL_COMMAND = "manual_command"
+    RISK_RULE = "risk_rule"
+
+
+# ── Admission ────────────────────────────────────────────────────────────────
+
+
+class AdmissionStatus(str, Enum):
+    """Paper-to-Live admission states (SAD 25)."""
+
+    PENDING_METRICS = "pending_metrics"
+    METRICS_COLLECTED = "metrics_collected"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+# ── Correction ───────────────────────────────────────────────────────────────
+
+
+class CorrectionType(str, Enum):
+    """Broker trade correction types (SAD 10.4)."""
+
+    PRICE_CORRECTION = "price_correction"
+    QUANTITY_CORRECTION = "quantity_correction"
+    TRADE_CANCELLATION = "trade_cancellation"
+    COMMISSION_ADJUSTMENT = "commission_adjustment"
+
+
+# ── Sandbox ──────────────────────────────────────────────────────────────────
+
+
+class SandboxViolationType(str, Enum):
+    """Strategy sandbox violation types (SAD 13.2/13.3)."""
+
+    CPU_TIMEOUT = "cpu_timeout"
+    MEMORY_EXCEEDED = "memory_exceeded"
+    NETWORK_BLOCKED = "network_blocked"
+    INSTRUMENT_NOT_WHITELISTED = "instrument_not_whitelisted"
+    OUTSIDE_TRADING_HOURS = "outside_trading_hours"
