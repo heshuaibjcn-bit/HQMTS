@@ -1,7 +1,9 @@
 """Strategy instance state machine (SAD 15.3).
 
-States: draft, approved, paper_running, live_preparing, pause_open,
-        live_running, close_only, stopped, failed, recovering
+States: draft, backtest_ready, validation_ready, paper_running,
+        live_running, pause_open, close_only, stopped, paused, archived
+
+Terminal states: archived
 
 Constraints:
 - Entering live_running requires approval or explicit rule authorization
@@ -16,51 +18,44 @@ from hqmts.statemachine.base import StateMachine
 
 # Transition table from SAD 15.3
 STRATEGY_TRANSITIONS: dict[StrategyStatus, set[StrategyStatus]] = {
-    StrategyStatus.DRAFT: {StrategyStatus.APPROVED, StrategyStatus.STOPPED},
-    StrategyStatus.APPROVED: {
+    StrategyStatus.DRAFT: {StrategyStatus.BACKTEST_READY, StrategyStatus.ARCHIVED},
+    StrategyStatus.BACKTEST_READY: {
+        StrategyStatus.VALIDATION_READY,
+        StrategyStatus.DRAFT,
+        StrategyStatus.ARCHIVED,
+    },
+    StrategyStatus.VALIDATION_READY: {
         StrategyStatus.PAPER_RUNNING,
-        StrategyStatus.LIVE_PREPARING,
-        StrategyStatus.STOPPED,
+        StrategyStatus.BACKTEST_READY,
+        StrategyStatus.ARCHIVED,
     },
     StrategyStatus.PAPER_RUNNING: {
-        StrategyStatus.APPROVED,
-        StrategyStatus.STOPPED,
-        StrategyStatus.FAILED,
-    },
-    StrategyStatus.LIVE_PREPARING: {
-        StrategyStatus.PAUSE_OPEN,
         StrategyStatus.LIVE_RUNNING,
-        StrategyStatus.FAILED,
+        StrategyStatus.VALIDATION_READY,
+        StrategyStatus.PAUSED,
+        StrategyStatus.ARCHIVED,
+    },
+    StrategyStatus.LIVE_RUNNING: {
+        StrategyStatus.PAUSE_OPEN,
+        StrategyStatus.CLOSE_ONLY,
         StrategyStatus.STOPPED,
+        StrategyStatus.ARCHIVED,
     },
     StrategyStatus.PAUSE_OPEN: {
         StrategyStatus.LIVE_RUNNING,
         StrategyStatus.CLOSE_ONLY,
         StrategyStatus.STOPPED,
-        StrategyStatus.RECOVERING,
-    },
-    StrategyStatus.LIVE_RUNNING: {
-        StrategyStatus.PAUSE_OPEN,
-        StrategyStatus.CLOSE_ONLY,
-        StrategyStatus.RECOVERING,
-        StrategyStatus.FAILED,
-        StrategyStatus.STOPPED,
     },
     StrategyStatus.CLOSE_ONLY: {
         StrategyStatus.PAUSE_OPEN,
         StrategyStatus.STOPPED,
-        StrategyStatus.RECOVERING,
     },
-    StrategyStatus.STOPPED: {StrategyStatus.APPROVED},
-    StrategyStatus.FAILED: {StrategyStatus.RECOVERING, StrategyStatus.STOPPED},
-    StrategyStatus.RECOVERING: {
-        StrategyStatus.PAUSE_OPEN,
-        StrategyStatus.CLOSE_ONLY,
-        StrategyStatus.FAILED,
-    },
+    StrategyStatus.STOPPED: {StrategyStatus.DRAFT, StrategyStatus.ARCHIVED},
+    StrategyStatus.PAUSED: {StrategyStatus.PAPER_RUNNING, StrategyStatus.STOPPED},
+    StrategyStatus.ARCHIVED: set(),  # Terminal
 }
 
-STRATEGY_TERMINAL_STATES: set[StrategyStatus] = set()  # No terminal states
+STRATEGY_TERMINAL_STATES: set[StrategyStatus] = {StrategyStatus.ARCHIVED}
 
 strategy_fsm = StateMachine[StrategyStatus](
     entity_type="StrategyInstance",

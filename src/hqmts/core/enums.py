@@ -83,17 +83,16 @@ class TargetDirection(str, Enum):
 class OrderStatus(str, Enum):
     """Order lifecycle states (SAD 15.1)."""
 
-    CREATED = "created"
-    SUBMITTING = "submitting"
+    PENDING = "pending"
     SUBMITTED = "submitted"
     ACCEPTED = "accepted"
-    PARTIALLY_FILLED = "partially_filled"
+    PARTIAL_FILLED = "partial_filled"
     FILLED = "filled"
-    CANCEL_PENDING = "cancel_pending"
     CANCELED = "canceled"
     REJECTED = "rejected"
+    ERROR = "error"
+    SUSPENDED = "suspended"
     EXPIRED = "expired"
-    UNCERTAIN = "uncertain"
 
 
 # ── Strategy Status ──────────────────────────────────────────────────────────
@@ -103,15 +102,15 @@ class StrategyStatus(str, Enum):
     """Strategy instance lifecycle states (SAD 15.3)."""
 
     DRAFT = "draft"
-    APPROVED = "approved"
+    BACKTEST_READY = "backtest_ready"
+    VALIDATION_READY = "validation_ready"
     PAPER_RUNNING = "paper_running"
-    LIVE_PREPARING = "live_preparing"
-    PAUSE_OPEN = "pause_open"
     LIVE_RUNNING = "live_running"
+    PAUSE_OPEN = "pause_open"
     CLOSE_ONLY = "close_only"
     STOPPED = "stopped"
-    FAILED = "failed"
-    RECOVERING = "recovering"
+    PAUSED = "paused"
+    ARCHIVED = "archived"
 
 
 # ── Reconciliation Status ────────────────────────────────────────────────────
@@ -120,13 +119,15 @@ class StrategyStatus(str, Enum):
 class ReconciliationStatus(str, Enum):
     """Reconciliation session states (SAD 15.4)."""
 
-    PENDING = "pending"
-    RUNNING = "running"
+    INITIALIZED = "initialized"
+    COMPARING = "comparing"
     MATCHED = "matched"
-    MISMATCH_DETECTED = "mismatch_detected"
-    CORRECTED = "corrected"
+    MISMATCHED = "mismatched"
+    ADJUSTING = "adjusting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
     ESCALATED = "escalated"
-    CLOSED = "closed"
 
 
 # ── Recovery Status ──────────────────────────────────────────────────────────
@@ -136,13 +137,12 @@ class RecoveryStatus(str, Enum):
     """Recovery session states (SAD 15.5)."""
 
     CREATED = "created"
-    LOADING_STATE = "loading_state"
-    RECONCILING = "reconciling"
-    REBUILDING_CONTEXT = "rebuilding_context"
-    PENDING_CONFIRMATION = "pending_confirmation"
+    DIAGNOSING = "diagnosing"
+    RECOVERING = "recovering"
+    VERIFYING = "verifying"
     COMPLETED = "completed"
-    ABORTED = "aborted"
-    ESCALATED = "escalated"
+    FAILED = "failed"
+    CANCELED = "canceled"
 
 
 # ── Risk ─────────────────────────────────────────────────────────────────────
@@ -238,10 +238,10 @@ class ExecutionStatus(str, Enum):
     """Controlled execution states (SAD 7.10)."""
 
     PENDING = "pending"
-    RUNNING = "running"
+    EXECUTING = "executing"
     COMPLETED = "completed"
     FAILED = "failed"
-    ESCALATED = "escalated"
+    EXPIRED = "expired"
 
 
 class SideEffectLevel(str, Enum):
@@ -300,6 +300,11 @@ class RejectReason(str, Enum):
     UNKNOWN_REJECT = "unknown_reject"
     UNAUTHORIZED_SOURCE = "unauthorized_source"
     POLICY_BLOCKED = "policy_blocked"
+    KILL_SWITCH = "kill_switch"
+    SIGNAL_EXPIRED = "signal_expired"
+    STRATEGY_NOT_LIVE = "strategy_not_live"
+    MARKET_CLOSED = "market_closed"
+    ORDER_FREQUENCY_EXCEEDED = "order_frequency_exceeded"
 
 
 # ── Data Quality ─────────────────────────────────────────────────────────────
