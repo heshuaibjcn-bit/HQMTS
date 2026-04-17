@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from hqmts.api.middleware.audit import AuditMiddleware
-from hqmts.api.routes import audit, backtest, instruments, orders, risk, signals, strategies
+from hqmts.api.routes import audit, backtest, instruments, orders, risk, signals, strategies, validation
 from hqmts.infra.tracing import RequestIdMiddleware
 from hqmts.db.connection import create_engine, create_session_factory
 from hqmts.infra.config import load_settings
@@ -54,6 +54,7 @@ def create_app(env: str | None = None) -> FastAPI:
     app.include_router(risk.router)
     app.include_router(audit.router)
     app.include_router(backtest.router)
+    app.include_router(validation.router)
 
     @app.get("/health")
     async def health() -> dict:
