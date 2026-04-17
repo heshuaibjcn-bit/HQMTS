@@ -116,7 +116,28 @@ class PaperTradingEngine:
         """
         instrument_id = str(signal.instrument_id)
 
-        side = "buy" if signal.signal_type in (SignalType.OPEN_LONG,) else "sell"
+        buy_types = {SignalType.OPEN_LONG, SignalType.CLOSE_SHORT}
+        sell_types = {SignalType.CLOSE_LONG, SignalType.OPEN_SHORT}
+
+        if signal.signal_type in buy_types:
+            side = "buy"
+        elif signal.signal_type in sell_types:
+            side = "sell"
+        elif signal.signal_type == SignalType.FLATTEN:
+            side = "sell"
+        else:
+            # HOLD or unknown — no action
+            return PaperOrder(
+                order_id=str(uuid.uuid4()),
+                signal_id=str(signal.signal_id),
+                instrument_id=instrument_id,
+                side="none",
+                order_type="market",
+                price=reference_price,
+                quantity=0,
+                status=PaperOrderStatus.REJECTED,
+                reject_reason="Signal type does not produce an order",
+            )
         quantity = 0
 
         if side == "buy":

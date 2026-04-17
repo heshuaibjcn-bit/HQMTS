@@ -13,6 +13,7 @@ from decimal import Decimal
 from hqmts.core.enums import ReservationStatus
 from hqmts.core.exceptions import InsufficientFundsError, ReservationExpiredError
 from hqmts.core.types import AccountId, ReservationId, StrategyInstanceId
+from hqmts.db.models.reservation import CashReservationORM
 from hqmts.db.repositories.reservation_repo import ReservationRepository
 from hqmts.domain.reservation import CashReservation
 
@@ -104,7 +105,20 @@ class ReservationManager:
             updated_at=now,
         )
 
-        # Persist via repo (would map to ORM in real implementation)
+        # Persist via repo
+        orm = CashReservationORM(
+            reservation_id=reservation.reservation_id,
+            account_id=str(reservation.account_id),
+            strategy_instance_id=str(reservation.strategy_instance_id),
+            signal_id=reservation.signal_id,
+            execution_intent_id=reservation.execution_intent_id,
+            reserved_amount=reservation.reserved_amount,
+            consumed_amount=reservation.consumed_amount,
+            status=reservation.status.value,
+            expires_at=reservation.expires_at,
+        )
+        await self._repo.create(orm)
+
         return reservation
 
     async def consume(

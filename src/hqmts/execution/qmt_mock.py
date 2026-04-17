@@ -239,7 +239,9 @@ class MockQMTAdapter:
         quantity: int,
         price: Decimal,
     ) -> None:
-        """Update mock position after fill."""
+        """Update mock position and account cash after fill."""
+        trade_value = price * Decimal(quantity)
+
         pos = self._positions.get(instrument_id)
         if pos is None:
             if side == "buy":
@@ -251,6 +253,11 @@ class MockQMTAdapter:
                     market_price=price,
                     unrealized_pnl=Decimal("0"),
                 )
+                # Deduct cash
+                self._account.available_cash -= trade_value
+                self._account.frozen_cash += trade_value
+                self._account.market_value += trade_value
+                self._account.total_asset = self._account.available_cash + self._account.market_value
             return
 
         if side == "buy":
@@ -259,7 +266,17 @@ class MockQMTAdapter:
             new_cost = (pos.cost_price * pos.quantity + price * quantity) / total_qty
             pos.quantity = total_qty
             pos.cost_price = new_cost
+            pos.market_price = price
+            # Deduct cash
+            self._account.available_cash -= trade_value
+            self._account.frozen_cash += trade_value
+            self._account.market_value += trade_value
+            self._account.total_asset = self._account.available_cash + self._account.market_value
         elif side == "sell":
+            # Add proceeds to cash
+            self._account.available_cash += trade_value
+            self._account.market_value -= pos.cost_price * Decimal(quantity)
+            self._account.total_asset = self._account.available_cash + self._account.market_value
             pos.quantity = max(0, pos.quantity - quantity)
             if pos.quantity == 0:
                 del self._positions[instrument_id]
