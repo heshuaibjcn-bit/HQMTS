@@ -14,6 +14,7 @@ from decimal import Decimal
 from hqmts.core.enums import Side
 from hqmts.core.types import AccountId, ExternalEventId, InstrumentId, OrderId
 from hqmts.domain.external_event import ExternalManualEvent
+from hqmts.core.types import now_shanghai
 
 
 @dataclass
@@ -62,7 +63,7 @@ class ExternalEventDetector:
 
         Returns events for broker trades with no matching internal record.
         """
-        now = detect_time or datetime.now()
+        now = detect_time or now_shanghai()
         internal_trade_ids = {t.trade_id for t in internal_trades}
 
         # Also match by instrument+side+quantity+price within time window

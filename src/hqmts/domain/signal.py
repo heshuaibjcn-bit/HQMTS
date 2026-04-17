@@ -15,6 +15,7 @@ from hqmts.core.types import (
     SignalId,
     StrategyInstanceId,
     VersionStr,
+    now_shanghai,
 )
 
 
@@ -45,9 +46,13 @@ class Signal(BaseModel):
 
     def is_expired(self, now: datetime | None = None) -> bool:
         """Check if the signal has expired."""
-        check_time = now or datetime.now()
+        check_time = now or now_shanghai()
         return check_time > self.valid_until
 
     def has_decision_binding(self) -> bool:
         """Check if signal has required DecisionSnapshot binding for Live."""
         return self.decision_snapshot_id is not None
+
+    @classmethod
+    def serialization_key(cls, entity_id: str) -> str:
+        return f"signal:{entity_id}"

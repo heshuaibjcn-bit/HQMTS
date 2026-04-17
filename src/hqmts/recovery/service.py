@@ -23,6 +23,7 @@ from hqmts.db.repositories.order_repo import OrderRepository
 from hqmts.db.repositories.reservation_repo import ReservationRepository
 from hqmts.reconciliation.service import ReconciliationService
 from hqmts.reservation.manager import ReservationManager
+from hqmts.core.types import now_shanghai
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ class RecoveryContext:
     account_id: str
     strategy_instance_id: str
     trigger_reason: str
-    has_uncertain_orders: bool = False
+    has_error_orders: bool = False
     has_position_mismatch: bool = False
     has_external_events: bool = False
     has_expired_reservations: bool = False
@@ -191,7 +192,7 @@ class RecoveryService:
     ) -> dict:
         """Create a new recovery session."""
         session_id = str(uuid.uuid4())
-        now = datetime.now()
+        now = now_shanghai()
 
         return {
             "recovery_session_id": session_id,
@@ -212,8 +213,8 @@ class RecoveryService:
         ]
 
         # Flag steps that need extra attention based on context
-        if context.has_uncertain_orders:
-            steps[6]["note"] = "Has uncertain orders — extra reconciliation needed"
+        if context.has_error_orders:
+            steps[6]["note"] = "Has error orders — extra reconciliation needed"
         if context.has_position_mismatch:
             steps[8]["note"] = "Position mismatch detected — detailed comparison required"
         if context.has_external_events:
@@ -272,7 +273,7 @@ class RecoveryService:
     ) -> RecoveryStep:
         """Step 2: Verify clock sync."""
         # In production, check NTP offset or compare against exchange clock.
-        now = datetime.now()
+        now = now_shanghai()
         return RecoveryStep(
             step_number=step_number,
             name="verify_clock",
@@ -500,14 +501,14 @@ class RecoveryService:
                 description="Establish RecoverySession",
                 status="failed", result="No recovery context provided",
             )
-        now = datetime.now()
+        now = now_shanghai()
         orm = RecoverySessionORM(
             recovery_session_id=session_id,
             scope_type="strategy",
             scope_id=context.strategy_instance_id,
             trigger_reason=context.trigger_reason,
             approval_required=True,
-            status=RecoveryStatus.RECONCILING.value,
+            status=RecoveryStatus.RECOVERING.value,
             started_at=now,
         )
         await self._recovery_repo.create(orm)

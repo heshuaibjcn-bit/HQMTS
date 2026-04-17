@@ -7,8 +7,15 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from hqmts.core.enums import OrderStatus, Side
-from hqmts.core.types import BrokerOrderId, OrderId, OrderRequestId
+from hqmts.core.enums import OrderStatus, OrderType, Side
+from hqmts.core.types import (
+    ActionId,
+    BrokerOrderId,
+    ExecutionIntentId,
+    OrderId,
+    OrderRequestId,
+    SignalId,
+)
 
 
 class Order(BaseModel):
@@ -23,9 +30,13 @@ class Order(BaseModel):
     account_id: str = ""
     instrument_id: str
     side: Side
+    order_type: OrderType = OrderType.LIMIT
     price: Decimal = Field(ge=0)
     quantity: int = Field(gt=0)
-    status: OrderStatus = OrderStatus.CREATED
+    signal_id: SignalId | None = None
+    execution_intent_id: ExecutionIntentId | None = None
+    action_id: ActionId | None = None
+    status: OrderStatus = OrderStatus.PENDING
     submitted_time: datetime | None = None
     updated_time: datetime | None = None
     filled_quantity: int = Field(default=0, ge=0)
@@ -55,5 +66,9 @@ class Order(BaseModel):
         return self.status in (
             OrderStatus.SUBMITTED,
             OrderStatus.ACCEPTED,
-            OrderStatus.PARTIALLY_FILLED,
+            OrderStatus.PARTIAL_FILLED,
         )
+
+    @classmethod
+    def serialization_key(cls, entity_id: str) -> str:
+        return f"order:{entity_id}"

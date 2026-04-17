@@ -25,13 +25,12 @@ class OrderRepository(BaseRepository[OrderORM]):
     async def get_active_orders_by_account(self, account_id: str) -> list[OrderORM]:
         """Get all non-terminal orders for an account."""
         active_statuses = [
-            OrderStatus.CREATED.value,
-            OrderStatus.SUBMITTING.value,
+            OrderStatus.PENDING.value,
             OrderStatus.SUBMITTED.value,
             OrderStatus.ACCEPTED.value,
-            OrderStatus.PARTIALLY_FILLED.value,
-            OrderStatus.CANCEL_PENDING.value,
-            OrderStatus.UNCERTAIN.value,
+            OrderStatus.PARTIAL_FILLED.value,
+            OrderStatus.SUSPENDED.value,
+            OrderStatus.ERROR.value,
         ]
         stmt = (
             select(OrderORM)
@@ -61,11 +60,12 @@ class OrderRepository(BaseRepository[OrderORM]):
     ) -> bool:
         """Check if there are conflicting in-flight orders for the same instrument/side."""
         active_statuses = [
-            OrderStatus.CREATED.value,
-            OrderStatus.SUBMITTING.value,
+            OrderStatus.PENDING.value,
             OrderStatus.SUBMITTED.value,
             OrderStatus.ACCEPTED.value,
-            OrderStatus.PARTIALLY_FILLED.value,
+            OrderStatus.PARTIAL_FILLED.value,
+            OrderStatus.SUSPENDED.value,
+            OrderStatus.ERROR.value,
         ]
         stmt = (
             select(OrderORM)

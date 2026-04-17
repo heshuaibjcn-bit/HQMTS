@@ -119,7 +119,7 @@ class ReconciliationService:
         status = (
             ReconciliationStatus.MATCHED
             if not diffs
-            else ReconciliationStatus.MISMATCH_DETECTED
+            else ReconciliationStatus.MISMATCHED
         )
 
         return ReconcileResult(
@@ -174,7 +174,7 @@ class ReconciliationService:
             reconciliation_id=str(uuid.uuid4()),
             scope_type=ReconcileScope.POSITION.value,
             scope_id=account_id,
-            status=ReconciliationStatus.MATCHED if not diffs else ReconciliationStatus.MISMATCH_DETECTED,
+            status=ReconciliationStatus.MATCHED if not diffs else ReconciliationStatus.MISMATCHED,
             diffs=diffs,
         )
 
@@ -202,7 +202,7 @@ class ReconciliationService:
             reconciliation_id=str(uuid.uuid4()),
             scope_type=ReconcileScope.ACCOUNT.value,
             scope_id=account_id,
-            status=ReconciliationStatus.MATCHED if not diffs else ReconciliationStatus.MISMATCH_DETECTED,
+            status=ReconciliationStatus.MATCHED if not diffs else ReconciliationStatus.MISMATCHED,
             diffs=diffs,
         )
 
@@ -265,7 +265,7 @@ class ReconciliationService:
         status = (
             ReconciliationStatus.MATCHED
             if not diffs
-            else ReconciliationStatus.MISMATCH_DETECTED
+            else ReconciliationStatus.MISMATCHED
         )
 
         return ReconcileResult(

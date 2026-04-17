@@ -20,7 +20,7 @@ class StrategyInstanceRepository(BaseRepository[StrategyInstanceORM]):
         """Get all active strategy instances for an account."""
         active_statuses = [
             StrategyStatus.LIVE_RUNNING.value,
-            StrategyStatus.LIVE_PAUSED.value,
+            StrategyStatus.PAUSED.value,
             StrategyStatus.PAPER_RUNNING.value,
         ]
         stmt = (

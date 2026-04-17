@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from hqmts.core.enums import ApprovalStatus
 from hqmts.core.types import ApprovalRequestId
+from hqmts.core.types import now_shanghai
 
 
 class ApprovalRequest(BaseModel):
@@ -48,5 +49,5 @@ class ApprovalRequest(BaseModel):
         """Check if the approval request has expired."""
         if self.expires_at is None:
             return False
-        check_time = now or datetime.now()
+        check_time = now or now_shanghai()
         return check_time > self.expires_at

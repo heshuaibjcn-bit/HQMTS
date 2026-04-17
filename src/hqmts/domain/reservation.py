@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 from hqmts.core.enums import ReservationStatus
 from hqmts.core.types import AccountId, ReservationId, StrategyInstanceId
+from hqmts.core.types import now_shanghai
 
 
 class CashReservation(BaseModel):
@@ -49,7 +50,7 @@ class CashReservation(BaseModel):
 
     def is_expired(self, now: datetime | None = None) -> bool:
         """Check if reservation has expired."""
-        check_time = now or datetime.now()
+        check_time = now or now_shanghai()
         return check_time > self.expires_at
 
     def can_consume(self, amount: Decimal) -> bool:
@@ -57,3 +58,7 @@ class CashReservation(BaseModel):
         if not self.is_active():
             return False
         return amount <= self.remaining_amount
+
+    @classmethod
+    def serialization_key(cls, entity_id: str) -> str:
+        return f"reservation:{entity_id}"

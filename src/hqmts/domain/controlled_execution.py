@@ -42,6 +42,7 @@ class ControlledExecution(BaseModel):
         return self.execution_status in (
             ExecutionStatus.COMPLETED,
             ExecutionStatus.FAILED,
+            ExecutionStatus.EXPIRED,
         )
 
     def needs_escalation(self) -> bool:

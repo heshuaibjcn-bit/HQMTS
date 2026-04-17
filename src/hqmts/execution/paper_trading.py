@@ -14,6 +14,7 @@ from decimal import Decimal
 from enum import Enum
 
 from hqmts.core.enums import Cycle, Side, SignalType
+from hqmts.core.types import now_shanghai
 from hqmts.domain.bar import Bar
 from hqmts.domain.signal import Signal
 
@@ -96,7 +97,7 @@ class PaperTradingEngine:
         self._state = PaperTradingState(
             session_id=session_id,
             strategy_name=strategy_name,
-            started_at=datetime.now(),
+            started_at=now_shanghai(),
             initial_cash=initial_cash,
             cash=initial_cash,
         )
@@ -210,7 +211,7 @@ class PaperTradingEngine:
         order.fill_quantity = order.quantity
         order.commission = commission
         order.stamp_tax = stamp_tax
-        order.filled_at = datetime.now()
+        order.filled_at = now_shanghai()
 
         return order
 
@@ -226,7 +227,7 @@ class PaperTradingEngine:
             total_asset += pos.cost_price * Decimal(pos.quantity)
 
         self._state.daily_snapshots.append({
-            "date": datetime.now().strftime("%Y%m%d"),
+            "date": now_shanghai().strftime("%Y%m%d"),
             "cash": str(self._state.cash),
             "total_asset": str(total_asset),
             "positions": {k: {"qty": v.quantity, "cost": str(v.cost_price)} for k, v in self._state.positions.items()},

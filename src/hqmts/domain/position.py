@@ -25,7 +25,10 @@ class Position(BaseModel):
     frozen_quantity: int = Field(default=0, ge=0)
     cost_price: Decimal = Field(ge=0)
     market_value: Decimal = Field(default=Decimal("0"), ge=0)
-    last_update_time: datetime
+    market_price: Decimal = Field(default=Decimal("0"), ge=0)
+    realized_pnl: Decimal = Decimal("0")
+    strategy_instance_id: str = ""
+    updated_at: datetime
 
     @property
     def is_flat(self) -> bool:
@@ -35,4 +38,10 @@ class Position(BaseModel):
     @property
     def unrealized_pnl(self) -> Decimal:
         """Unrealized profit/loss."""
+        if self.market_price > 0:
+            return (self.market_price - self.cost_price) * self.total_quantity
         return self.market_value - (self.cost_price * self.total_quantity)
+
+    @classmethod
+    def serialization_key(cls, entity_id: str) -> str:
+        return f"position:{entity_id}"

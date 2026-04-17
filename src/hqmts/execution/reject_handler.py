@@ -1,6 +1,6 @@
 """Rejection handler with taxonomy and remediation (SAD Section 20).
 
-14 rejection types with specific remediation strategies.
+19 rejection types with specific remediation strategies.
 """
 
 from __future__ import annotations
@@ -121,6 +121,41 @@ REJECTION_STRATEGIES: dict[RejectReason, RejectionAction] = {
         requires_manual_review=True,
         action_description="Policy blocked — reject and audit",
     ),
+    RejectReason.KILL_SWITCH: RejectionAction(
+        reject_reason=RejectReason.KILL_SWITCH,
+        retryable=False,
+        max_retries=0,
+        requires_manual_review=True,
+        action_description="Kill switch triggered, all trading halted",
+    ),
+    RejectReason.SIGNAL_EXPIRED: RejectionAction(
+        reject_reason=RejectReason.SIGNAL_EXPIRED,
+        retryable=False,
+        max_retries=0,
+        requires_manual_review=False,
+        action_description="Signal has expired, generate new signal",
+    ),
+    RejectReason.STRATEGY_NOT_LIVE: RejectionAction(
+        reject_reason=RejectReason.STRATEGY_NOT_LIVE,
+        retryable=False,
+        max_retries=0,
+        requires_manual_review=True,
+        action_description="Strategy not in live_running state",
+    ),
+    RejectReason.MARKET_CLOSED: RejectionAction(
+        reject_reason=RejectReason.MARKET_CLOSED,
+        retryable=True,
+        max_retries=3,
+        requires_manual_review=False,
+        action_description="Market is closed, retry during trading hours",
+    ),
+    RejectReason.ORDER_FREQUENCY_EXCEEDED: RejectionAction(
+        reject_reason=RejectReason.ORDER_FREQUENCY_EXCEEDED,
+        retryable=True,
+        max_retries=1,
+        requires_manual_review=False,
+        action_description="Order frequency limit exceeded, slow down",
+    ),
 }
 
 
@@ -152,6 +187,17 @@ class RejectHandler:
             "duplicate": RejectReason.DUPLICATE_SUBMIT,
             "unauthorized": RejectReason.UNAUTHORIZED_SOURCE,
             "policy": RejectReason.POLICY_BLOCKED,
+            "kill_switch": RejectReason.KILL_SWITCH,
+            "kill switch": RejectReason.KILL_SWITCH,
+            "signal expired": RejectReason.SIGNAL_EXPIRED,
+            "signal_expired": RejectReason.SIGNAL_EXPIRED,
+            "not live": RejectReason.STRATEGY_NOT_LIVE,
+            "not_live": RejectReason.STRATEGY_NOT_LIVE,
+            "market closed": RejectReason.MARKET_CLOSED,
+            "market_closed": RejectReason.MARKET_CLOSED,
+            "trading hours": RejectReason.MARKET_CLOSED,
+            "frequency": RejectReason.ORDER_FREQUENCY_EXCEEDED,
+            "rate limit": RejectReason.ORDER_FREQUENCY_EXCEEDED,
         }
 
         for keyword, reason in classification_map.items():

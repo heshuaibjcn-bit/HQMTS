@@ -20,7 +20,7 @@ class ReconciliationSession(BaseModel):
     broker_snapshot_ref: str | None = None  # Broker state reference
     diff_summary: dict = Field(default_factory=dict)
     severity: str = "info"  # info, warning, critical
-    status: ReconciliationStatus = ReconciliationStatus.PENDING
+    status: ReconciliationStatus = ReconciliationStatus.INITIALIZED
     resolution_status: str = "pending"  # pending, resolved, escalated
     started_at: datetime
     completed_at: datetime | None = None

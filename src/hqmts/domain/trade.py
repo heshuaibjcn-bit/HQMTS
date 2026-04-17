@@ -21,11 +21,12 @@ class Trade(BaseModel):
     trade_id: TradeId
     order_id: OrderId
     instrument_id: InstrumentId
-    trade_time: datetime
+    traded_at: datetime
     trade_price: Decimal = Field(ge=0)
     trade_quantity: int = Field(gt=0)
     commission: Decimal = Field(default=Decimal("0"), ge=0)
-    tax: Decimal = Field(default=Decimal("0"), ge=0)
+    stamp_tax: Decimal = Field(default=Decimal("0"), ge=0)
+    slippage: Decimal = Field(default=Decimal("0"))
     broker_trade_id: BrokerTradeId | None = None
     created_at: datetime
 
@@ -39,4 +40,8 @@ class Trade(BaseModel):
     @property
     def total_cost(self) -> Decimal:
         """Total cost including commission and tax."""
-        return self.trade_amount + self.commission + self.tax
+        return self.trade_amount + self.commission + self.stamp_tax
+
+    @classmethod
+    def serialization_key(cls, entity_id: str) -> str:
+        return f"trade:{entity_id}"

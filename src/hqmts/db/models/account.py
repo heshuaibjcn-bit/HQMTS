@@ -21,5 +21,6 @@ class AccountORM(Base, TimestampMixin):
     market_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
     pnl_intraday: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
     drawdown_intraday: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="CNY")
     risk_status: Mapped[str] = mapped_column(String(16), default="normal")
-    last_update_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

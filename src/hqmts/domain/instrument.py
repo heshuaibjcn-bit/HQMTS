@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 
 from hqmts.core.types import InstrumentId
@@ -25,5 +28,11 @@ class Instrument(BaseModel):
     lot_size: int = Field(default=100, gt=0)
     upper_limit_rule: str = "normal"  # normal, st, registration
     lower_limit_rule: str = "normal"
+    sector: str = ""
+    industry: str = ""
+    listing_date: datetime | None = None
+    delist_date: datetime | None = None
+    is_index: bool = False
+    constituent_of: list[str] = Field(default_factory=list)
 
     model_config = {"frozen": True}

@@ -33,6 +33,7 @@ from hqmts.domain.agent_proposal import AgentProposal
 from hqmts.domain.agent_task import AgentTask
 from hqmts.domain.approval_request import ApprovalRequest
 from hqmts.domain.controlled_execution import ControlledExecution
+from hqmts.core.types import now_shanghai
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ class AgentTaskRepository(BaseRepository[AgentTaskORM]):
         orm.completed_at = task.completed_at
         orm.failure_reason = task.failure_reason
         orm.output_ref = task.output_ref
-        orm.updated_at = datetime.now()
+        orm.updated_at = now_shanghai()
         await self.update(orm)
         return self.to_domain(orm)
 
@@ -168,7 +169,7 @@ class AgentProposalRepository(BaseRepository[AgentProposalORM]):
         orm.approval_status = proposal.approval_status
         orm.approval_request_id = proposal.approval_request_id
         orm.executed_result = proposal.executed_result
-        orm.updated_at = datetime.now()
+        orm.updated_at = now_shanghai()
         await self.update(orm)
         return self.to_domain(orm)
 
@@ -233,7 +234,7 @@ class ApprovalRequestRepository(BaseRepository[ApprovalRequestORM]):
         orm.approved_at = approval.approved_at
         orm.decision = approval.decision.value
         orm.decision_reason = approval.decision_reason
-        orm.updated_at = datetime.now()
+        orm.updated_at = now_shanghai()
         await self.update(orm)
         return self.to_domain(orm)
 
@@ -284,8 +285,8 @@ class ControlledExecutionRepository(BaseRepository[ControlledExecutionORM]):
             completed_at=execution.completed_at,
             result_ref=execution.result_ref,
             failure_reason=execution.failure_reason,
-            created_at=execution.started_at or datetime.now(),
-            updated_at=datetime.now(),
+            created_at=execution.started_at or now_shanghai(),
+            updated_at=now_shanghai(),
         )
         orm = await self.create(orm)
         return self.to_domain(orm)
@@ -298,6 +299,6 @@ class ControlledExecutionRepository(BaseRepository[ControlledExecutionORM]):
         orm.completed_at = execution.completed_at
         orm.result_ref = execution.result_ref
         orm.failure_reason = execution.failure_reason
-        orm.updated_at = datetime.now()
+        orm.updated_at = now_shanghai()
         await self.update(orm)
         return self.to_domain(orm)

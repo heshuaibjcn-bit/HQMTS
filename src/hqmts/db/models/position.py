@@ -25,4 +25,7 @@ class PositionORM(Base, TimestampMixin):
     frozen_quantity: Mapped[int] = mapped_column(default=0)
     cost_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=0)
     market_value: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
-    last_update_time: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    market_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=0)
+    realized_pnl: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0)
+    strategy_instance_id: Mapped[str] = mapped_column(String(64), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

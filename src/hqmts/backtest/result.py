@@ -9,6 +9,7 @@ from typing import Any, Sequence
 import uuid
 
 from hqmts.backtest.portfolio import DailyValue, TradeRecord
+from hqmts.core.types import now_shanghai
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,7 @@ class BacktestResultBuilder:
                 "sell_count": len(sell_trades),
             },
             data_version=data_version,
-            created_at=datetime.now(),
+            created_at=now_shanghai(),
         )
 
     @staticmethod
