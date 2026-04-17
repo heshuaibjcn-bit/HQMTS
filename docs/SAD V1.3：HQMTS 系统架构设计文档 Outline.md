@@ -252,7 +252,7 @@ Live 相关 Agent 任务出现以下情况时，默认不得继续推进高风�
 
 ## 4.1 逻辑分层
 
-V1.3 系统分为 10 层：
+V1.3 系统分为 11 层：
 
 1. 外部接入层
 2. 数据处理层
@@ -264,6 +264,7 @@ V1.3 系统分为 10 层：
 8. Hermes Agent 智能编排层
 9. 治理与审计层
 10. 存储与可观测层
+11. 用户界面层（Web Dashboard + AI 对话）
 
 ---
 
@@ -271,51 +272,63 @@ V1.3 系统分为 10 层：
 
 Text
 
-                  ┌─────────────────────────────┐
+  ┌─────────────────────────────────────────────────────────┐
 
-                  │        Hermes Agent Layer     │
+  │                    User Interface Layer                   │
 
-                  │ Research / Analysis / Report  │
+  │           Web Dashboard  │  AI Chat Interface            │
 
-                  │ Reconciliation / Recovery     │
+  │    REST API + WebSocket  │  SSE (Streaming)               │
 
-                  └──────────────┬──────────────┘
-
-                                 │
-
-                    Tool / Proposal / Approval API
+  └──────────────────────────────┬──────────────────────────┘
 
                                  │
 
-                  ┌──────────────▼──────────────┐
+                  ┌───────────────▼───────────────┐
 
-                  │     Governance & Control      │
+                  │        Hermes Agent Layer       │
 
-                  │ Policy / Approval / Audit     │
+                  │ Research / Analysis / Report    │
 
-                  └──────────────┬──────────────┘
+                  │ Reconciliation / Recovery       │
 
-                                 │
+                  └───────────────┬───────────────┘
 
-        ┌────────────────────────▼────────────────────────┐
+                                  │
 
-        │             Deterministic Trading Core            │
+                     Tool / Proposal / Approval API
 
-        │ Strategy Runtime / Risk / Reservation / Execution │
+                                  │
 
-        │ Order FSM / Trade Ledger / Reconciliation         │
+                  ┌───────────────▼───────────────┐
 
-        └──────────────┬─────────────────────┬────────────┘
+                  │      Governance & Control       │
 
-                       │                     │
+                  │ Policy / Approval / Audit       │
 
-              ┌────────▼────────┐    ┌──────▼────────┐
+                  └───────────────┬───────────────┘
 
-              │   Data Layer     │    │   QMT Adapter │
+                                  │
 
-              │ Tushare / Bars   │    │ Market/Trade  │
+        ┌─────────────────────────▼─────────────────────────┐
 
-              └─────────────────┘    └───────────────┘
+        │              Deterministic Trading Core              │
+
+        │ Strategy Runtime / Risk / Reservation / Execution    │
+
+        │ Order FSM / Trade Ledger / Reconciliation            │
+
+        └───────────────┬──────────────────────┬────────────┘
+
+                        │                      │
+
+               ┌────────▼────────┐     ┌──────▼────────┐
+
+               │   Data Layer     │     │   QMT Adapter │
+
+               │ Tushare / Bars   │     │ Market/Trade  │
+
+               └─────────────────┘     └───────────────┘
 
 ---
 
@@ -2597,6 +2610,544 @@ Agent 越权尝试默认不低于 P1。
 
 ---
 
+# 29.5. 用户界面架构
+
+## 29.5.1 系统定位
+
+用户界面层是 HQMTS 的第 11 层，位于存储与可观测层之上，是用户（量化研究者、交易执行者、系统管理者）与系统交互的唯一入口。
+
+定位约束：
+
+- UI 层是后端 API 的纯消费者，不承载任何业务逻辑、交易决策或风控裁决
+- Dashboard 与 AI Chat 共享同一套 REST API 和 WebSocket 通道
+- UI 层不直接访问数据库、不直接调用 QMT、不直接读写交易状态
+- 所有写操作通过后端 API 走完整治理链路
+
+## 29.5.2 架构分层
+
+用户界面层内部按职责分为 3 个子层：
+
+```
+┌──────────────────────────────────────────────────────┐
+│                    Presentation Layer                  │
+│  ┌──────────────────┐  ┌────────────────────────────┐ │
+│  │  Web Dashboard    │  │  AI Chat Interface         │ │
+│  │  (SPA / SSR)      │  │  (Conversation + SSE)      │ │
+│  └────────┬──────────┘  └──────────┬─────────────────┘ │
+│           │                        │                    │
+│  ┌────────▼────────────────────────▼─────────────────┐ │
+│  │              API Client Layer                       │ │
+│  │  REST Client  │  WebSocket Client  │  SSE Client   │ │
+│  └────────┬──────────────────────────┬───────────────┘ │
+│           │                          │                  │
+│  ┌────────▼──────────────────────────▼───────────────┐ │
+│  │              State Management Layer                 │ │
+│  │  Local Cache  │  Real-time Sync  │  Optimistic UI  │ │
+│  └───────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────┘
+                          │
+                 ┌────────▼────────┐
+                 │  FastAPI Backend │
+                 │  REST + WS + SSE │
+                 └─────────────────┘
+```
+
+### Presentation Layer
+
+- **Web Dashboard**：页面路由、组件渲染、图表可视化
+- **AI Chat Interface**：对话流渲染、Markdown 支持、工具调用可视化
+
+### API Client Layer
+
+- **REST Client**：调用 FastAPI REST 端点，处理认证、重试、错误
+- **WebSocket Client**：接收实时推送（持仓变动、订单状态、信号、告警）
+- **SSE Client**：接收 AI 对话流式输出
+
+### State Management Layer
+
+- **Local Cache**：减少重复 API 调用（策略列表、标的列表等低频变更数据）
+- **Real-time Sync**：WebSocket 消息合并到本地状态
+- **Optimistic UI**：仅用于非交易数据（Chat 消息发送状态、UI 面板折叠）。**禁止对 Order、Position、Account、RiskCheckResult 状态使用 Optimistic Update**，撤单、下单、策略启停必须等服务端确认后再更新界面
+
+Optimistic UI 约束：
+- 若后端确认与 Optimistic 状态冲突，必须强制回退并提示用户
+- 原因：在撤单-重试场景中，Optimistic 显示"已取消"但后端实际已成交，可能导致用户基于幻觉数据提交重复订单
+
+## 29.5.3 后端接口扩展
+
+用户界面层依赖以下后端接口，其中部分已存在，部分需新增。
+
+### 已有 REST API（可直接复用）
+
+| 端点 | 用途 |
+|------|------|
+| `GET /` | 系统信息 |
+| `GET /health` | 健康状态 |
+| `GET /instruments/` | 标的列表 |
+| `GET /orders/` | 订单列表 |
+| `GET /signals/` | 信号列表 |
+| `GET /strategies/` | 策略列表 |
+| `GET /risk/status` | 风控状态 |
+| `POST /risk/kill-switch` | 激活 Kill Switch（REST 同步返回，不依赖 WebSocket） |
+| `POST /risk/kill-switch/deactivate` | 停用 Kill Switch（需审批，见 PRD 7.4） |
+| `POST /risk/flatten` | 触发平仓 |
+| `GET /backtest/` | 回测列表 |
+| `POST /backtest/run` | 发起回测 |
+| `GET /audit/events` | 审计事件 |
+| `POST /validation/admission` | 准入管理 |
+
+### 需新增接口
+
+**FR-API-001 WebSocket 端点 `/ws`**
+
+```
+连接：GET /ws
+请求头：Sec-WebSocket-Protocol: bearer, {token}
+（禁止通过 query parameter 传递 token，避免泄露到服务器日志）
+
+消息格式（服务端推送）：
+{
+  "type": "position_update" | "order_update" | "signal_new" |
+          "risk_change" | "alert" | "agent_task_update",
+  "data": { ... },
+  "event_id": "evt_abc123",
+  "sequence": 1001,
+  "timestamp": "ISO-8601"
+}
+```
+
+推送事件类型：
+
+| type | 触发时机 | 推送数据 |
+|------|---------|---------|
+| `position_update` | 持仓价格变动或数量变动 | position_id, market_price, unrealized_pnl |
+| `order_update` | 订单状态变更 | order_id, old_status, new_status |
+| `signal_new` | 新信号生成 | signal_id, strategy, instrument, type |
+| `risk_change` | 风控状态变更 | layer, old_status, new_status |
+| `alert` | 告警触发 | alert_level, message, source |
+| `agent_task_update` | Agent 任务状态变更 | task_id, old_status, new_status |
+
+实现要求：
+
+- 基于现有 `PipelineBus`（`infra/bus.py`）扩展，将 Redis Stream 消息桥接到 WebSocket
+- 每个连接维护订阅过滤（用户角色决定可见事件范围，过滤规则见 PRD 30.6 FR-REALTIME-001）
+- 双向应用层心跳：客户端每 30s 发送 `{"type": "ping"}`，服务端回复 `{"type": "pong"}`；服务端 60s 未收到 ping 则主动断开
+- 重连时客户端发送 `{"type": "reconnect", "last_sequence": N}`，服务端补发缺失消息
+- 服务端保留每个用户最近 100 条推送消息（TTL 5min）用于重连恢复
+- 若缺失消息超出保留范围，发送完整状态快照
+- 前端按 sequence 单调递增处理消息，乱序消息丢弃
+- REST API 响应包含 `last_sequence` 字段，前端据此判断 REST 与 WebSocket 状态新旧
+- 同一用户最多 3 个并发登录会话，每个会话可建立 1 个 WebSocket 连接（即最多 3 个 WebSocket 连接）
+- WebSocket 是只读推送通道，客户端不能通过 WebSocket 发送操作命令
+
+**FR-API-002 账户聚合端点 `GET /account/summary`**
+
+```
+响应：
+{
+  "account_id": "...",
+  "total_asset": "1000000.00",
+  "available_cash": "500000.00",
+  "frozen_cash": "50000.00",
+  "market_value": "450000.00",
+  "pnl_intraday": "12000.00",
+  "pnl_intraday_pct": "1.2",
+  "drawdown_intraday": "0.008",
+  "position_count": 5,
+  "active_strategies": 3,
+  "updated_at": "ISO-8601"
+}
+```
+
+**FR-API-003 AI 对话端点**
+
+```
+POST /chat/sessions          创建对话会话
+GET  /chat/sessions          列出会话
+POST /chat/sessions/{id}/messages  发送消息（SSE 流式响应）
+GET  /chat/sessions/{id}/messages  获取历史消息
+```
+
+SSE 流式消息格式：
+
+```
+event: token
+data: {"content": "当前持仓"}
+
+event: tool_call
+data: {"tool": "query_positions", "status": "running"}
+
+event: tool_result
+data: {"tool": "query_positions", "result": {...}}
+
+event: approval_request
+data: {"proposal_id": "...", "type": "...", "payload": {...}}
+
+event: done
+data: {"message_id": "..."}
+```
+
+**FR-API-004 告警端点 `GET /alerts`**
+
+```
+GET /alerts?level=P0&P1&status=unacknowledged
+
+响应：
+{
+  "alerts": [
+    {
+      "alert_id": "...",
+      "level": "P1",
+      "message": "订单拒绝率超过阈值",
+      "source": "risk",
+      "created_at": "ISO-8601",
+      "acknowledged": false
+    }
+  ]
+}
+
+POST /alerts/{alert_id}/acknowledge  确认告警
+```
+
+## 29.5.4 AI Chat 架构
+
+### 对话链路
+
+```
+用户输入
+  │
+  ▼
+前端 Chat UI ──POST /chat/sessions/{id}/messages──▶ Chat Router (FastAPI)
+                                                      │
+                                            ┌─────────▼──────────┐
+                                            │  Chat Session Mgr   │
+                                            │  (上下文管理)        │
+                                            └─────────┬──────────┘
+                                                      │
+                                            ┌─────────▼──────────┐
+                                            │  LLM Adapter       │
+                                            │  Claude / OpenAI / │
+                                            │  Local Model       │
+                                            └─────────┬──────────┘
+                                                      │ (function calling)
+                                            ┌─────────▼──────────┐
+                                            │  Tool Gateway      │
+                                            │  (与 Agent 共享实例) │
+                                            └─────────┬──────────┘
+                                                      │
+                                            ┌─────────▼──────────┐
+                                            │  Policy Engine     │
+                                            │  (与 Agent 共享实例) │
+                                            └─────────┬──────────┘
+                                                      │
+                                            ┌─────────▼──────────┐
+                                            │  [approved tool]   │
+                                            │  or                │
+                                            │  ApprovalRequest   │
+                                            └────────────────────┘
+```
+
+Chat 流中的工具调用**不经过 Hermes Agent 编排层**。Chat 直接调用 ToolGateway（与 Agent 共享同一实例），ToolGateway 识别来源为 `chat_session`，创建 ToolInvocation 审计记录，走相同的 PolicyEngine 校验链路。
+
+AgentTask 创建职责：
+- **ChatSessionManager** 负责创建 AgentTask（source=`chat`）
+- AgentTask.creator = 当前登录用户的 user_id
+- AgentTask.metadata 包含：`chat_session_id`、`chat_message_id`、触发用户消息摘要
+- AgentTask 状态由 ToolGateway 回调更新，ChatSessionManager 监听状态变更以推送 SSE 事件
+- 一个用户消息可能触发 0 或 1 个 AgentTask（纯闲聊不创建 AgentTask，工具调用才创建）
+
+关键区别：
+- Agent 自动调用：由 AgentTask 驱动，有编排逻辑
+- Chat 用户调用：由用户消息驱动，无编排逻辑，但走相同治理链路
+- 两者共享 ToolGateway、PolicyEngine、ApprovalRequest 基础设施
+- 两者产生独立的 ToolInvocation 审计记录（source 字段区分 `agent_task` vs `chat_session`）
+- Chat 工具调用创建 AgentTask（source=chat）和 ToolInvocation 记录，与 Agent 自动化调用使用同一审计模型
+
+### LLM Adapter
+
+- 抽象层：统一 Claude API / OpenAI API / 本地模型（Ollama）的调用接口
+- 流式输出：所有模型统一使用 SSE 流式返回
+- 上下文管理：对话历史存储在服务端，前端只维护 session_id
+- Token 限制：单次上下文不超过模型限制，超出时截断最早的消息
+- 所有 LLM 调用的 prompt 和响应必须写入审计存储（保留 90 天，与 PRD FR-CHAT-006 对齐）
+
+### Tool Executor（复用 ToolGateway）
+
+- Chat 流直接调用 Hermes Agent 的 ToolGateway 和 PolicyEngine（共享实例，不创建新组件）
+- 用户在 Chat 中的操作走与 Agent 相同的治理链路
+- LLM 通过 function calling 决定调用哪些工具
+- 工具调用结果流式返回前端（`tool_call` / `tool_result` SSE 事件）
+- 每次 Chat 工具调用创建 AgentTask（source=chat）和 ToolInvocation 审计记录
+
+### 审批流集成
+
+- LLM 返回的 Proposal 通过 `approval_request` SSE 事件推送到前端
+- 前端渲染审批卡片，用户点击审批/拒绝
+- 审批操作调用已有 `POST /validation/admission/{id}/approve` 等端点
+- 审批结果通过 WebSocket 实时推送到 Dashboard
+
+## 29.5.5 前端状态管理
+
+### 数据分类
+
+| 数据类型 | 来源 | 更新策略 | 示例 |
+|---------|------|---------|------|
+| 静态配置 | REST API | 页面加载时拉取，手动刷新 | 策略列表、标的列表 |
+| 实时状态 | WebSocket | 自动推送更新 | 持仓价格、订单状态 |
+| 历史数据 | REST API | 按需加载，分页 | 审计事件、历史订单 |
+| 流式数据 | SSE | 持续接收 | AI 对话输出 |
+
+### 缓存策略
+
+- **策略列表、标的列表**：本地缓存 5 分钟，避免重复请求
+- **持仓数据**：WebSocket 推送增量更新，初始加载走 REST
+- **订单数据**：WebSocket 推送状态变更，详情按需加载
+
+### 环境视角
+
+前端根据当前环境（Research / Backtest / Paper / Live）切换数据范围和操作权限：
+
+- Research / Backtest：只读为主，隐藏实时监控面板
+- Paper：显示实时监控，隐藏资金操作
+- Live：全功能可用，敏感操作需二次确认
+
+## 29.5.6 安全架构
+
+### 认证与授权
+
+- API 认证：Bearer Token（JWT），通过 `/auth/login` 获取
+- WebSocket 认证：通过 Sec-WebSocket-Protocol 请求头传递 token（`Sec-WebSocket-Protocol: bearer, {token}`），禁止 query parameter 传递（避免泄露到服务器日志）
+- SSE 认证：请求头携带 Bearer Token
+- Token 过期自动刷新，刷新失败跳转登录页
+
+### 前端安全
+
+- 前端不存储敏感凭证（API Key、数据库密码、QMT 凭证）
+- Live 环境敏感操作（Kill Switch、Force Flatten、策略启停）需二次确认弹窗
+- CSRF 保护：SameSite Cookie + CSRF Token
+- XSS 防护：对话内容严格转义，Markdown 渲染禁用 raw HTML
+
+### 权限控制
+
+- 前端根据用户角色（量化研究者 / 交易执行者 / 系统管理者）显示/隐藏功能
+- 权限判断在后端 API 层执行，前端隐藏仅为 UX 优化，非安全边界
+- 前端角色信息从 `/auth/me` 端点获取
+- 详细权限矩阵见 PRD 30.3，SAD 实现与 PRD 定义保持一致
+- 环境视角权限差异：Research/Backtest 只读为主，Paper 显示实时监控但隐藏资金操作，Live 全功能可用
+
+## 29.5.7 可观测性
+
+### 前端监控
+
+- 页面加载性能（Core Web Vitals）
+- API 调用成功率和延迟
+- WebSocket 连接状态和重连次数
+- AI 对话响应时间
+
+### 错误处理
+
+- API 错误：统一错误拦截，P0/P1 级别弹窗提示，P2/P3 级别 toast 提示
+- WebSocket 断线：自动重连（指数退避，最大 30s），断线期间显示状态指示
+- SSE 断流：自动重连，从中断点继续
+- 网络不可用：显示离线状态，缓存最后已知数据
+
+## 29.5.8 部署架构
+
+### 开发环境
+
+```
+Frontend Dev Server (localhost:3000)
+        │
+        │ CORS / Proxy
+        ▼
+FastAPI Backend (localhost:8000)
+```
+
+### 生产环境
+
+```
+┌─────────────────────────────────────────┐
+│              Nginx / Reverse Proxy       │
+│  /           → Frontend Static Files     │
+│  /api/*      → FastAPI Backend           │
+│  /ws         → FastAPI WebSocket         │
+│  /chat/*     → FastAPI SSE               │
+└─────────────────────────────────────────┘
+```
+
+- 前端构建为静态文件，由 Nginx 托管
+- API 请求通过 Nginx 反向代理到 FastAPI
+- WebSocket 和 SSE 通过 Nginx 升级协议透传
+- HTTPS / WSS 由 Nginx 终结 TLS
+
+## 29.5.9 UI 与 Agent 边界
+
+用户界面层与 Hermes Agent 的交互边界：
+
+| 维度 | UI 层职责 | Agent 层职责 |
+|------|----------|-------------|
+| 数据查询 | 展示 API 返回的数据 | 通过 ToolGateway 查询 |
+| 操作触发 | 发送操作请求到 API | 通过 PolicyEngine 校验 |
+| 审批 | 展示审批卡片、收集用户决策 | 生成 ApprovalRequest、记录审批结果 |
+| 分析 | 展示 Agent 返回的分析结果 | 执行分析逻辑、生成 Proposal |
+| 风控 | 展示风控状态、提供操作入口 | 执行风控裁决、触发降级 |
+
+约束：
+
+- UI 层不得绕过 API 直接操作交易状态
+- UI 层不得在客户端执行风控逻辑
+- UI 层的"审批"操作只是收集用户意图，实际状态变更由后端执行
+- AI Chat 中的 LLM 选择不影响后端 Agent 治理链的 Policy Engine 校验
+- 所有 UI 操作产生的审计事件与核心审计系统（Section 26）使用同一存储
+
+## 29.5.9.1 UI 层可观测性（补充 Section 28）
+
+后端监控指标：
+
+- WebSocket 活跃连接数 / 总连接尝试 / 连接失败率
+- WebSocket 推送延迟（PipelineBus → 客户端 RTT 估算）P50 / P95 / P99
+- Bridge 组件消息积压量
+- SSE 活跃流数量
+- Chat session 创建速率
+- LLM API 调用延迟（P50 / P95 / P99）
+- LLM API 错误率（按 provider 分类）
+- LLM Token 消耗量
+- Alert 产生和确认延迟
+- 新增 REST API 端点延迟（/chat/*, /alerts, /account/summary）
+
+前端监控指标：
+
+- 页面加载性能（Core Web Vitals: LCP, FID, CLS）
+- API 调用成功率和延迟
+- WebSocket 连接状态和重连次数
+- AI 对话响应时间
+
+## 29.5.10 领域模型补充
+
+Chat 和 Alert 相关领域模型，补充 Section 7。
+
+### ChatSession
+
+最小字段：
+
+- session_id (PK)
+- user_id
+- title
+- status: active / idle / archived
+- model_provider（claude / openai / local）
+- environment（research / backtest / paper / live）
+- created_at
+- updated_at
+
+状态机：active → idle（30 分钟无消息）→ archived（用户手动归档或 7 天无活动）
+
+### ChatMessage
+
+最小字段：
+
+- message_id (PK)
+- session_id (FK)
+- role: user / assistant / tool_call / tool_result / system
+- content
+- tool_call_id (nullable, 关联 ToolInvocation)
+- agent_task_id (nullable, 关联 AgentTask，Chat 触发的工具调用创建 AgentTask)
+- created_at
+
+### Alert
+
+最小字段：
+
+- alert_id (PK)
+- level: P0 / P1 / P2 / P3
+- message
+- source（risk / data / agent / system）
+- status: open / acknowledged / suppressed
+- entity_type (nullable)
+- entity_id (nullable)
+- created_at
+- acknowledged_at (nullable)
+- acknowledged_by (nullable)
+
+### AlertAcknowledgment
+
+最小字段：
+
+- id (PK)
+- alert_id (FK)
+- user_id
+- acknowledged_at
+- note
+
+数据保留策略：
+
+- ChatMessage 消息内容：保留 90 天，到期后 `content` 字段清空（置为 "[已过期]"），其余元数据（message_id、session_id、role、tool_call_id、agent_task_id、created_at）永久保留以支撑审计追踪
+- ChatMessage 中关联审计的记录（包含 tool_call、tool_result、审批决策的消息）：`content` 字段不清空，永久保留（与 PRD 审计要求对齐）
+- ChatSession：保留 1 年
+- Alert + AlertAcknowledgment：保留 1 年
+
+## 29.5.11 UI 层降级策略
+
+| 故障场景 | UI 行为 | 后端行为 |
+|---------|---------|---------|
+| WebSocket 断连 | 显示"数据可能陈旧"警告，自动降级 REST 轮询（30s） | Bridge 标记 unhealthy |
+| Bridge 组件故障 | 前端检测无推送超过 90s，触发 REST 轮询降级 | Section 28 告警 |
+| Redis 不可用 | 同上（PipelineBus 停止推送） | 参见 Section 23.5 |
+| SSE 断流 | 显示"AI 响应中断"，提供重试按钮 | 服务端保持 session 5min |
+| FastAPI 不可用 | 显示"系统维护中"，缓存最后已知数据 | Nginx 返回 502 |
+| LLM API 不可用 | Chat 显示"AI 服务暂时不可用"，非 Chat 功能不受影响 | 503 + 重试 |
+| Live 环境本地模型不可用 | Chat 显示"本地模型不可用，请检查 Ollama 服务状态。实盘数据不允许发送到外部服务。"，**禁止回退到云模型**，通知管理员 | 检测本地模型健康状态，返回 503 + 明确错误消息，不转发到第三方 API |
+
+安全关键操作（Kill Switch / Force Flatten）不依赖实时通道，始终通过 REST POST 执行。
+
+## 29.5.12 容量与扩展
+
+### 容量目标（V1.5）
+
+- 并发 WebSocket 连接：50（量化团队内部使用）
+- 并发 SSE 流：20
+- 单连接推送速率：≤ 10 msg/s
+- PipelineBus → WebSocket Bridge 延迟：≤ 500ms
+
+### 速率限制
+
+- WebSocket 客户端→服务端：≤ 10 msg/min per connection（超出断连）
+- SSE：每用户同时 ≤ 3 个活跃流
+- Chat Messages：每用户 ≤ 20 msg/min，每 session ≤ 60 msg/hour
+- REST API：只读 100 req/min，交易操作 10 req/min，回测启动 5 req/min
+- **紧急操作（独立限流桶）：Kill Switch 激活 1 req/min（60s 冷却），Kill Switch 停用 1 req/5min，Force Flatten 3 req/min**
+- 所有超限返回 429 或 force_disconnect
+
+### 水平扩展（V2.0 规划）
+
+- WebSocket：每个 FastAPI 实例维护本地连接表，Bridge 通过 Redis pub/sub 广播，无需 sticky session
+- SSE：Chat Session 绑定创建实例，需 sticky session 或 session 状态存 Redis
+- V1.5 单实例部署，不涉及上述复杂性
+
+## 29.5.13 Chat 上下文管理策略
+
+1. 系统提示（不可截断）：角色定义、安全约束、当前环境信息
+2. 工具结果（可摘要）：超过 10 条的工具结果自动压缩为摘要
+3. 用户消息（可截断）：最早的用户消息优先截断
+4. 上下文注入：每次请求注入当前环境（Live/Paper）、用户角色、时间戳
+5. 禁止在上下文中缓存仓位/订单数据，每次通过工具查询实时数据
+6. Live 环境的 Chat 仅允许使用本地模型，Research/Backtest 环境可使用第三方模型（脱敏后）
+
+## 29.5.14 UI API 错误分类
+
+| 错误码 | 场景 | HTTP/WS 状态 |
+|--------|------|-------------|
+| WS_AUTH_FAILED | token 无效或过期 | 4001 (WS close) |
+| WS_RATE_LIMITED | 客户端消息速率超限 | 4002 (WS close) |
+| CHAT_SESSION_NOT_FOUND | session ID 不存在 | 404 |
+| CHAT_LLM_UNAVAILABLE | LLM provider 不可用 | 503 |
+| CHAT_LOCAL_MODEL_UNAVAILABLE | Live 环境本地模型不可用，禁止回退到云模型 | 503 + "实盘数据不允许发送到外部服务" |
+| CHAT_CONTEXT_EXCEEDED | 对话上下文超限 | 400 |
+| ALERT_ALREADY_ACK | alert 已被确认 | 409 |
+| ACCOUNT_DATA_STALE | 账户数据无法刷新 | 200 + warning header |
+| CONCURRENT_MODIFICATION | 实体被其他用户修改 | 409 |
+
+---
+
 # 30. 实施优先级
 
 ## 30.1 P0
@@ -2637,6 +3188,11 @@ Agent 越权尝试默认不低于 P1。
 5. Recovery Copilot 增强
 6. Reconciliation Agent 增强
 7. 自动化根因分析
+8. WebSocket 实时推送端点（FR-API-001）
+9. Web Dashboard 核心面板（Overview + Positions + Orders + Risk）
+10. AI 对话界面基础版（Chat Session + LLM Adapter + Tool Executor）
+11. Dashboard 与 AI Chat 联动
+12. 回测结果可视化（收益曲线、回撤曲线、指标卡片）
 
 ---
 
@@ -2686,6 +3242,7 @@ Agent 越权尝试默认不低于 P1。
 |审计|订单与版本审计|增加 Agent 全链路审计|
 |测试|状态机、预占、恢复|增加 Agent 越权、Proposal 审批、Tool 幂等测试|
 |安全|凭证隔离|增加 Agent Service Account 最小权限与 Tool Gateway 隔离|
+|用户界面|无|增加第 11 层用户界面层（Web Dashboard + AI Chat），定义 WebSocket 推送、SSE 对话流、前后端架构分层|
 
 ---
 
@@ -2711,3 +3268,9 @@ V1.3 的关键架构结论如下：
 12. Agent 只能通过 Tool Gateway 和 Proposal / Approval / ControlledExecution 闭环作用系统
 13. Agent 输出不是事实源，不能替代交易数据库、审计系统和状态机
 14. Agent 超时、失败、越权或上下文不完整时，Live 相关动作默认 fail-closed
+15. 用户界面层是后端 API 的纯消费者，不承载业务逻辑、风控裁决或交易决策
+16. Dashboard 与 AI Chat 共享同一套 REST API / WebSocket，不创建独立数据通道
+17. AI Chat 中的 LLM 选择不影响后端 Agent 治理链，Policy Engine 校验与前端无关
+18. 前端权限隐藏仅为 UX 优化，安全边界由后端 API 层强制执行
+19. Live 环境 AI Chat 仅允许本地模型，本地模型不可用时禁止回退到云模型，避免实盘数据泄露
+20. Kill Switch / Force Flatten 始终通过 REST POST 执行，不依赖 WebSocket，确保紧急操作可靠性

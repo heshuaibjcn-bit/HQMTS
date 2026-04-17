@@ -179,6 +179,7 @@ Agent 只能通过白名单 Tool / Control API / Transition API 间接作用系�
 15. 审计、日志、版本治理、故障恢复
 16. Agent 工具权限模型与审计闭环
 17. Agent Proposal / Approval / Controlled Execution 闭环
+18. 用户界面子系统（Web Dashboard + AI 对话）
 
 ## 4.2 V1.3 不包含
 
@@ -354,6 +355,7 @@ V1.3 中，以下动作必须人工审批：
 - 新策略进入实盘
 - 已下线策略恢复实盘
 - 关键风控参数变更
+- Kill Switch 停用（激活无需审批，但停用必须审批以防止风险敞口）
 - 执行节点切换
 - 账户级风险上限调整
 - 黑名单/白名单策略级例外配置
@@ -1916,6 +1918,9 @@ Orchestrator 不可以：
 - 偏差归因分析
 - 对账与恢复建议增强
 - 审批流体验优化
+- Web Dashboard 核心面板（总览、持仓、订单、风控）
+- AI 对话界面（查询类操作、审批流集成）
+- WebSocket 实时推送
 
 ## V2.0
 
@@ -1948,3 +1953,533 @@ V1.3 的核心变化不是继续叠加功能，而是进一步把系统从“AI 
 8. QMT 只是执行网关，不是研究中心
 9. 回测结果必须可复现，实盘行为必须可审计
 10. Agent 可以提建议、做分析、发起任务，但不能绕过人和风控
+
+---
+
+# 30. 用户界面子系统
+
+## 30.1 目标
+
+为量化研究者、交易执行者、系统管理者提供可视化操作界面，包括 Web Dashboard 和 AI 对话两种交互方式，使系统从"仅 API 可用"升级为"可视化可操作"。
+
+当前系统所有交互通过 REST API 或 Python SDK 完成，无法直观监控持仓盈亏、风控状态、回测结果，也无法通过自然语言与 Hermes Agent 协作。用户界面子系统旨在填补这一空白。
+
+## 30.2 设计原则
+
+1. **UI 是后端 API 的消费者**，不承载业务逻辑。所有交易决策、风控裁决、状态变更仍由后端确定性服务完成。
+2. **Dashboard 与 AI Chat 共享同一套 REST API / WebSocket**，不创建独立数据通道。
+3. **支持 4 种环境视角切换**（Research / Backtest / Paper / Live），不同环境展示不同数据范围和操作权限。
+4. **实时数据通过 WebSocket 推送**，非实时数据通过 REST API 拉取。
+5. **移动端适配**（响应式布局或后续单独 app），V1.5 以桌面端为主。
+
+## 30.3 用户角色与界面权限
+
+| 功能 | 量化研究者 | 交易执行者 | 系统管理者 | 审批要求 |
+|------|-----------|-----------|-----------|---------|
+| 总览面板 | 只读 | 只读 | 只读 | 无 |
+| 持仓管理 | 只读 | 只读 | 只读 | 无 |
+| 订单管理 | 查看 | 查看 + 撤单 | 查看 + 撤单 | 撤单需审计（FR-NFR-006） |
+| 风控监控 | 查看 | 查看 + Kill Switch | 查看 + Kill Switch + 规则配置 | Kill Switch 可直接激活；**停用需审批**；规则配置走 7.4 审批流 |
+| 策略管理 | 创建 + 编辑 | 启停操作 | 全部操作 | **Live 环境启停需审批（7.4）**；Paper 环境自由；创建/编辑不等于部署 |
+| 信号监控 | 只读 | 只读 | 只读 | 无 |
+| 回测与验证 | 发起回测 + 查看结果 | 查看结果 | 查看结果 | 无 |
+| 审计与合规 | 查看自己操作 | 查看相关操作 | 查看全部 | 无 |
+| AI 对话 | 研究类 + 分析类 | 监控类 + 操作类 | 全部 | Agent 操作走与 PRD 7.2 相同治理链 |
+| 审批操作 | 无 | 审批/拒绝 | 审批/拒绝 | 审批记录进入审计 |
+
+注：前端角色隐藏仅为 UX 优化，安全边界由后端 API 层强制执行。
+
+## 30.4 Web Dashboard 功能需求
+
+### FR-UI-001 总览面板（Overview）
+
+系统首页，一屏展示当前账户全局状态。
+
+展示内容：
+
+- 账户总资产、可用资金、冻结资金、持仓市值
+- 日内盈亏（金额 + 百分比）、累计盈亏
+- 活跃策略数量及运行状态统计
+- 系统健康状态：QMT 连接状态、数据源状态、Agent 状态
+- 当前环境标识（Research / Backtest / Paper / Live），醒目区分
+- 最新告警（P0/P1 级别置顶）
+
+数据来源：
+
+- `GET /` 系统信息
+- `GET /health` 健康状态
+- `GET /risk/status` 风控状态
+- 账户/持仓聚合数据
+
+### FR-UI-002 持仓管理面板（Positions）
+
+展示内容：
+
+- 持仓列表：标的代码、名称、方向、总数量、可用数量、成本价、现价、市值、浮盈/浮亏（金额 + 百分比）
+- T+1 区分：今日买入部分用标识区分，明确不可卖出
+- 按策略实例分组查看
+- 实时盈亏更新（WebSocket 推送价格变动）
+
+交互：
+
+- 点击持仓查看关联订单和成交明细
+- 按标的/策略/盈亏排序和过滤
+
+数据来源：
+
+- 持仓数据（Position ORM）
+- 实时行情（QMT 或缓存价格）
+
+### FR-UI-003 订单管理面板（Orders）
+
+展示内容：
+
+- 订单列表：标的、方向（买/卖）、价格、数量、已成交数量、状态、创建时间
+- 状态过滤：pending / submitted / partial_filled / filled / canceled / rejected / error
+- 订单详情：关联信号、风控检查结果、成交明细、拒绝原因
+
+交互：
+
+- 手动撤单（仅 pending / submitted 状态）
+- 点击订单查看完整生命周期（创建→风控→提交→回报→成交）
+- 导出订单列表
+
+数据来源：
+
+- `GET /orders/` 订单列表
+- `GET /orders/{order_id}` 订单详情
+- `GET /risk/checks/{risk_check_id}` 风控检查结果
+
+### FR-UI-004 风控监控面板（Risk）
+
+展示内容：
+
+- 五层风控状态总览：市场级、账户级、策略级、标的级、订单级，各层显示 normal / warning / alert 状态
+- 风控检查历史列表（recent_checks）
+- Kill Switch 当前状态（活跃/未激活）与激活操作按钮
+- Force Flatten 进度查看：触发原因、总持仓数、已平仓数、失败数
+- 风控规则配置查看（只读，修改通过审批流）
+
+交互：
+
+- 触发 Kill Switch（需二次确认，通过 REST POST 同步提交，UI 等待 REST 响应确认）
+- 停用 Kill Switch（需二次确认 + 审批流 7.4）
+- 触发 Force Flatten（需二次确认 + 原因填写，通过 REST POST）
+- 查看风控检查详情
+
+数据来源：
+
+- `GET /risk/status` 风控状态
+- `GET /risk/checks/{risk_check_id}` 检查详情
+- `POST /risk/kill-switch` 激活 Kill Switch（REST 端点，不依赖 WebSocket）
+- `POST /risk/kill-switch/deactivate` 停用 Kill Switch（需审批，见 7.4）
+- `POST /risk/flatten` 触发平仓
+- `GET /risk/flatten/{flatten_id}` 平仓进度
+
+### FR-UI-005 策略管理面板（Strategies）
+
+展示内容：
+
+- 策略列表：名称、版本、描述、创建时间
+- 策略实例列表：实例ID、关联策略、运行状态、环境、创建时间
+- 策略状态机可视化：显示当前状态及可转换状态（draft → backtest_ready → validation_ready → paper_running → live_running → pause_open / close_only / stopped）
+
+交互：
+
+- 策略状态切换（遵循 PRD 16 章准入制度）
+- 查看策略参数配置
+- 查看策略关联标的和信号
+
+数据来源：
+
+- `GET /strategies/` 策略列表
+- `GET /strategies/{strategy_id}` 策略详情
+- `GET /strategies/{strategy_id}/instances` 实例列表
+
+### FR-UI-006 信号监控面板（Signals）
+
+展示内容：
+
+- 实时信号流：策略实例、标的、信号类型（open_long / close_long / open_short / close_short / flatten / hold）、信号强度、决策时间
+- 信号详情：关联 Bar 信息、因子快照引用、决策原因码（reason_code）
+- 信号历史查询：按策略、标的、时间范围过滤
+
+交互：
+
+- 点击信号查看完整决策链（信号→风控→意图→订单）
+- 信号统计分析（按策略/标的聚合）
+
+数据来源：
+
+- `GET /signals/` 信号列表
+- `GET /signals/{signal_id}` 信号详情
+
+### FR-UI-007 回测与验证面板（Backtest & Validation）
+
+展示内容：
+
+- 回测任务列表：策略名称、版本、参数、标的、时间范围、状态、创建时间
+- 回测结果展示：
+  - 收益曲线（净值随时间变化）
+  - 回撤曲线（最大回撤标注）
+  - 月度/年度收益热力图
+  - 交易明细表（时间、标的、方向、价格、数量、盈亏）
+  - 关键指标卡片：总收益、年化收益、最大回撤、Sharpe Ratio、胜率、盈亏比、总交易次数
+- 参数优化结果：参数热力图、稳定区分析
+- Walk-forward 验证结果展示
+- Paper-to-Live 准入评估看板：
+  - 准入记录列表（admission_id、策略、状态、readiness_score）
+  - Paper 指标详情
+  - 准入评估结果（通过/未通过各项检查）
+
+交互：
+
+- 发起新回测（选择策略、参数、标的、时间范围）
+- 发起参数扫描（sweep）
+- 查看回测详情和交易明细
+- 创建 Paper-to-Live 准入申请
+- 提交准入审批
+
+数据来源：
+
+- `POST /backtest/run` 发起回测
+- `POST /backtest/run-sweep` 参数扫描
+- `GET /backtest/` 回测列表
+- `GET /backtest/{backtest_id}` 回测详情
+- `POST /validation/admission` 创建准入
+- `POST /validation/admission/{id}/metrics` 收集指标
+- `POST /validation/admission/{id}/evaluate` 评估
+- `POST /validation/admission/{id}/approve` 审批
+
+### FR-UI-008 审计与合规面板（Audit）
+
+展示内容：
+
+- 审计事件时间线：按时间倒序展示所有审计事件
+- 查询过滤：按实体类型（signal / order / position / strategy / agent_task 等）、实体ID、关联ID（correlation_id）、时间范围、告警等级过滤
+- 实体审计追踪：选择任一实体，展示从信号生成到最终成交的完整链路
+- Agent 操作审计：展示 Agent 任务、工具调用、Proposal、审批记录
+
+交互：
+
+- 点击审计事件查看详情
+- 按实体ID追踪完整操作链
+- 导出审计日志
+
+数据来源：
+
+- `GET /audit/events` 审计事件列表
+- `GET /audit/trace/{entity_type}/{entity_id}` 实体审计追踪
+
+### FR-UI-009 系统监控面板（Monitoring）
+
+展示内容：
+
+- 系统健康仪表盘：
+  - QMT 延迟（ms）、连接状态
+  - 数据延迟（ms）、Bar 聚合状态
+  - CPU / 内存使用率
+  - Kill Switch 状态
+- 告警列表：按 P0 / P1 / P2 / P3 分级展示，未确认告警置顶
+- Agent 任务监控：任务积压数、超时数、失败率、活跃任务列表
+- 指标趋势图：订单成功率、成交率、策略错误率的时间序列
+
+交互：
+
+- 确认/处理告警
+- 查看告警详情和关联事件
+- 时间范围选择（1h / 6h / 24h / 7d）
+
+数据来源：
+
+- `GET /health` 系统健康
+- `GET /risk/status` 风控状态
+- 监控指标（MetricsCollector）
+- 告警数据（AlertService）
+
+### FR-UI-010 告警与通知（Alerts）
+
+展示内容：
+
+- 实时告警推送（WebSocket）
+- 告警列表：等级、内容、触发时间、确认状态
+- 告警规则配置：查看当前告警阈值和触发条件
+
+交互：
+
+- 告警确认与处理
+- 通知渠道管理（邮件、钉钉、企业微信等）
+- 告警规则修改（需审批）
+
+数据来源：
+
+- WebSocket 实时推送
+- 告警服务（AlertService + NotificationRouter）
+
+## 30.5 AI 对话界面功能需求
+
+### FR-CHAT-001 对话界面
+
+- 侧边栏或独立页面的对话窗口，可拖拽调整大小
+- 支持 Markdown 渲染（表格、代码块、图表内嵌）
+- 对话历史保存与回溯（按会话分组）
+- 多轮对话上下文保持
+- 对话中可插入图表（收益曲线、持仓饼图等）
+
+### FR-CHAT-002 Agent 交互
+
+用户自然语言输入的完整处理链路：
+
+> 用户输入 → Hermes Agent 解析意图 → 调用受控工具（白名单） → 返回结构化结果 → 渲染给用户
+
+展示内容：
+
+- Agent 操作可视化：显示当前正在调用的工具名称、等待状态
+- Agent 治理链可视化：Task → Proposal → Policy Check → Approval → Execution 各阶段状态
+- Agent 角色标识：当前对话由哪个角色处理（Research / Monitoring / Recovery / Audit 等）
+- 工具调用结果展示：表格、图表、摘要文本
+
+### FR-CHAT-003 Dashboard 联动
+
+- 对话中提及的实体（持仓、订单、策略、标的）可点击跳转到对应 Dashboard 页面
+- Dashboard 页面可通过右键菜单或按钮唤起 AI 对话，自动带入当前页面上下文（如"分析这个订单为什么被拒绝"）
+- AI 生成的图表可嵌入对话流，也可展开到 Dashboard 全屏查看
+
+### FR-CHAT-004 审批流集成
+
+- Agent Proposal 在对话中以卡片形式展示，包含：建议内容、置信度、影响范围
+- 用户可直接在对话中点击"审批通过"或"拒绝"，附带审批意见
+- 审批操作需二次确认弹窗
+- 审批结果实时反映到 Dashboard（策略状态变更、订单状态变更等）
+
+### FR-CHAT-005 快捷指令
+
+- 支持斜杠命令：`/backtest`、`/flatten`、`/approve`、`/status`、`/audit` 等
+- 常用操作一键触发（如"查看当前持仓"、"最近回测结果"）
+- 指令自动补全（输入 `/` 后弹出可用命令列表，**列表根据用户角色过滤，未授权命令不显示**）
+- 命令参数提示
+- 斜杠命令强制角色检查：`/flatten`、`/approve` 等敏感命令仅限拥有对应权限的角色执行，未授权用户直接输入时返回 403 提示
+
+### FR-CHAT-006 多模型支持
+
+- 支持接入 Claude API / OpenAI API / 本地模型（如 Ollama）
+- 模型选择由平台管理员统一配置，非用户自行选择（避免未授权模型接入）
+- 不同会话可使用不同模型（在管理员配置的范围内）
+- 模型选择不影响后端 Agent 治理链（治理链由 Hermes Agent 内部的 Policy Engine 实现，与前端选择的 LLM 无关）
+- 流式输出支持（Server-Sent Events）
+
+数据安全约束：
+
+- Live 环境的 Chat 会话仅允许使用本地模型（Ollama）或经安全审查的私有部署模型，禁止将持仓、订单、账户等实盘数据发送到第三方 API（Claude/OpenAI）
+- **Live 环境本地模型不可用时的降级策略：** 禁止回退到第三方云模型。显示明确的错误提示："当前本地模型不可用，请检查 Ollama 服务状态。实盘数据不允许发送到外部服务。" 提供重试按钮和管理员通知。不缓存任何实盘数据在降级状态。
+- Research / Backtest 环境可使用第三方模型，但发送前必须脱敏处理（移除真实账户 ID、具体金额等敏感信息）
+- 模型选择变更需审计（FR-NFR-006）
+- 所有 LLM 调用的 prompt 和响应必须记录在审计存储中（保留 90 天）
+
+### FR-CHAT-007 Agent 能力范围
+
+对话界面的 Agent 可以（与 PRD 7.2 L1-L3 层对应）：
+
+- 查询行情、持仓、订单、账户状态（L1 只读分析）
+- 发起回测、验证、对账任务（L3 受控触发）
+- 生成研究报告、策略建议（L2 受限建议）
+- 解释风控拦截原因（L1 只读分析）
+- 提供恢复建议（L2 受限建议）
+- 生成审计报告（L1 只读分析）
+
+对话界面的 Agent 不可以（与 PRD 7.2 L4 禁止层对应）：
+
+- 直接下单、撤单
+- 绕过审批修改实盘配置
+- 修改风控阈值
+- 直接调用 QMT 接口
+- 直接写入核心交易状态
+
+## 30.6 实时数据需求
+
+### FR-REALTIME-001 WebSocket 推送
+
+后端需新增 WebSocket 端点（`/ws`），推送以下实时数据：
+
+- 持仓变动（价格更新、数量变动）
+- 订单状态变更（提交、部分成交、成交、拒绝、撤销）
+- 信号生成（新信号实时推送）
+- 风控状态变更（规则触发、Kill Switch 变化）
+- 告警触发（P0-P3 级别告警）
+- Agent 任务状态变更（任务开始、完成、失败）
+
+认证：
+
+- WebSocket 通过 `Sec-WebSocket-Protocol` 头传递 Bearer Token（禁止通过 query parameter 传递，避免 token 泄露到服务器日志）
+- 服务端在握手时验证 token，验证失败拒绝连接
+- 连接期间 token 过期，服务端发送 `{"type": "force_disconnect", "reason": "token_expired"}` 后主动断开
+- WebSocket 是只读推送通道，客户端不能通过 WebSocket 发送操作命令，所有写操作走 REST API
+
+消息格式：
+
+```json
+{
+  "type": "order_update",
+  "data": { ... },
+  "event_id": "evt_abc123",
+  "sequence": 1001,
+  "timestamp": "2025-01-15T10:30:00+08:00"
+}
+```
+
+每条消息包含 `event_id`（PipelineBus Redis Stream entry ID）和 `sequence`（per-user 单调递增序列号），用于前端去重和排序。
+
+消息推送角色过滤：
+
+| 事件类型 | 量化研究者 | 交易执行者 | 系统管理者 |
+|---------|-----------|-----------|-----------|
+| position_update | 仅 Paper/Backtest | 本账户 Live + Paper | 全部 |
+| order_update | 仅 Paper/Backtest | 本账户 Live + Paper | 全部 |
+| signal_new | 本策略 | 本策略 | 全部 |
+| risk_change | 无 | 本账户 | 全部 |
+| alert | P2-P3 | P1-P3 | 全部 |
+| agent_task_update | 本用户创建的 | 本用户创建的 | 全部 |
+
+重连与消息恢复：
+
+- 客户端断线后使用指数退避重连（最大 30s）
+- 重连时发送 `{"type": "reconnect", "last_sequence": 1000}`
+- 服务端补发 last_sequence 之后的所有未确认消息（服务端保留最近 100 条 per-user 推送，TTL 5min）
+- 若缺失消息超出保留范围，服务端发送完整状态快照
+- 客户端按 sequence 单调递增处理消息，乱序消息丢弃
+
+REST / WebSocket 排序：
+
+- REST API 响应包含 `last_sequence` 字段
+- 前端拒绝 sequence <= 已处理最大值的状态更新
+- 写操作（POST/PUT）后 500ms 内以 REST 响应状态为准
+
+心跳：
+
+- 双向应用层心跳：客户端每 30s 发送 `{"type": "ping"}`，服务端回复 `{"type": "pong"}`
+- 服务端 60s 未收到 ping → 主动断开
+- 客户端 60s 未收到 pong → 触发重连
+- 不使用 WebSocket 协议层 ping/pong（代理可能不透传）
+
+### FR-REALTIME-002 数据刷新策略
+
+- **实盘环境（Live）**：WebSocket 实时推送，无需手动刷新
+- **仿真环境（Paper）**：WebSocket 实时推送
+- **回测/研究环境（Backtest / Research）**：手动刷新或短间隔轮询
+- **Dashboard 支持"自动刷新"开关**，可全局切换
+- **WebSocket 断线时自动降级**为 REST 轮询（30s 间隔），并显示"数据可能陈旧"警告
+- **安全关键操作**（Kill Switch、Force Flatten）始终通过 REST POST 发送，不依赖 WebSocket。REST 端点同步返回操作 ID，即使 WebSocket 断线也能确认操作已执行
+
+### FR-REALTIME-003 Kill Switch / Force Flatten 断线保障
+
+- Kill Switch 和 Force Flatten 通过 REST `POST` 触发，返回同步确认（操作 ID + 状态）
+- WebSocket 仅用于状态通知，不用于操作触发
+- WebSocket 断线时，Dashboard 顶部显示持续警告横幅"实时数据连接中断，操作仍可用但状态更新可能延迟"
+- Force Flatten 进度在 WebSocket 不可用时通过 `GET /risk/flatten/{flatten_id}` REST 轮询获取
+- 用户触发 Kill Switch 后 UI 显示"操作已提交"等待 REST 响应，而非假设成功
+
+## 30.7 非功能需求
+
+### FR-NFR-001 响应时间
+
+- Dashboard 页面首次加载 < 2s
+- Dashboard 页面切换 < 500ms
+- WebSocket 关键事件延迟（Kill Switch、订单成交） < 200ms（P99）
+- WebSocket 信息事件延迟（持仓价格更新） < 500ms（P99）
+- AI 对话首字响应 < 3s（流式输出开始时间）
+- REST API 请求响应 < 1s（90th percentile）
+
+### FR-NFR-002 数据安全
+
+- 前端不存储敏感凭证（API Key、数据库密码等）
+- API 认证使用 Bearer Token（JWT），通过 `/auth/login` 获取
+- API 通信使用 HTTPS
+- WebSocket 使用 WSS，认证通过 `Sec-WebSocket-Protocol` 头传递（禁止 query parameter）
+- SSE 认证使用 Bearer Token（Authorization 头），浏览器原生 EventSource 不支持自定义头时使用 fetch + ReadableStream 实现
+- 实盘操作（Kill Switch、Force Flatten、策略启停）需二次确认
+- CSRF 保护：SameSite Cookie + CSRF Token（REST 端点）；SSE/WebSocket 使用 Bearer Token 不受 CSRF 影响
+- XSS 防护：对话内容严格转义，Markdown 渲染禁用 raw HTML，图片 src 仅允许 http/https 协议（禁止 data: URI），链接 href 仅允许 http/https/mailto（禁止 javascript:），渲染前通过 DOMPurify 清洗
+- 审批卡片必须来自服务端结构化数据，LLM 不得生成审批按钮
+
+### FR-NFR-003 可访问性
+
+- 支持中文界面（主要用户语言）
+- 支持暗色/亮色主题切换（所有标准 UI 组件和图表必须正确渲染两种主题，偏好设置持久保存在 localStorage）
+- 响应式布局：桌面端优先，平板端可用（V1.5 不包含移动端适配）
+- 关键数据使用颜色 + 图标双重标识（不依赖单一颜色传达信息）
+- Live 环境视角使用醒目视觉标识（顶部红色横幅）
+
+### FR-NFR-004 会话管理
+
+- 会话超时：活跃 30 分钟（有 API 调用自动续期），不活跃 5 分钟
+- Live 环境敏感操作后强制重新认证
+- 单用户最多 3 个并发登录会话（每个会话可建立 1 个 WebSocket 连接，即最多 3 个 WebSocket 连接）
+- 服务端支持即时令牌失效（管理员撤销权限时立即断开所有连接）
+- WebSocket 连接与会话生命周期绑定，会话失效时服务端主动断开 WebSocket
+
+### FR-NFR-005 速率限制
+
+- REST API 只读端点：100 req/min per user
+- REST API 交易操作（下单、撤单）：10 req/min per user
+- **紧急操作（独立限流桶，不受交易限流影响）：**
+  - Kill Switch 激活：1 req/min per user（激活后 60s 冷却期，防止误触连击）
+  - Kill Switch 停用：1 req/5min per user（需审批，低频操作）
+  - Force Flatten：3 req/min per user
+- REST API 回测启动：5 req/min per user
+- Chat 消息：20 msg/min per user，60 msg/hour per session
+- WebSocket 客户端消息：10 msg/min per connection（超出断连）
+- SSE 活跃流：3 per user
+- 所有超限返回 429 Too Many Requests 或 force_disconnect
+
+### FR-NFR-006 UI 操作审计
+
+以下 UI 操作必须生成审计事件，与核心审计系统（FR-UI-008）使用同一 `audit/events` 端点：
+
+- Kill Switch 激活 / Force Flatten 触发
+- 手动撤单
+- 策略状态转换
+- 审批决策（批准/拒绝）
+- AI Chat 命令和响应
+- 环境视角切换
+- 告警确认
+- 会话登录/登出
+
+审计事件字段：用户 ID、角色、会话 ID、IP 地址、时间戳、操作类型、目标实体、变更前后状态。
+
+### FR-NFR-007 错误处理
+
+- P0/P1 级别 API 错误：弹窗提示，显示后端错误原因，提供重试选项
+- P2/P3 级别 API 错误：Toast 提示
+- Kill Switch / Force Flatten 被后端拒绝：显示具体拒绝原因（如"当前无持仓可平"）
+- 会话过期（401）：重定向登录页，保留表单数据
+- AI Chat 错误：在对话流中显示错误标记，提供重试按钮
+- 网络不可用：显示连接状态横幅，缓存最后已知数据
+- 并发冲突：若实体在操作前被其他用户修改，返回 409 Conflict，提示"数据已变更，请刷新后重试"
+
+## 30.8 版本规划
+
+### V1.5（与 PRD V1.5 对齐）
+
+交付重点：
+
+- Dashboard 核心面板：总览面板（FR-UI-001）+ 持仓管理（FR-UI-002）+ 订单管理（FR-UI-003）+ 风控监控（FR-UI-004）
+- 策略管理面板基础版（FR-UI-005）：列表 + 状态查看
+- AI 对话基础功能（FR-CHAT-001 / 002 / 007）：查询类操作、Agent 可视化
+- 审批流界面（FR-CHAT-004）：Proposal 查看 + 审批操作
+- WebSocket 实时推送（FR-REALTIME-001）
+- 快捷指令（FR-CHAT-005）
+
+### V2.0（与 PRD V2.0 对齐）
+
+交付重点：
+
+- 信号监控面板（FR-UI-006）
+- 回测与验证可视化增强（FR-UI-007）：收益曲线、热力图、参数分析
+- Paper-to-Live 准入看板完整版
+- Agent 治理链完整可视化
+- 审计与合规面板（FR-UI-008）
+- 系统监控面板（FR-UI-009）
+- 告警与通知（FR-UI-010）
+- Dashboard 联动（FR-CHAT-003）
+- 多模型支持（FR-CHAT-006）
+- 移动端适配

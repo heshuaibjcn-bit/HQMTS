@@ -428,3 +428,22 @@ class SandboxViolationType(str, Enum):
     NETWORK_BLOCKED = "network_blocked"
     INSTRUMENT_NOT_WHITELISTED = "instrument_not_whitelisted"
     OUTSIDE_TRADING_HOURS = "outside_trading_hours"
+
+
+# ── User & Auth (PRD 30.3) ────────────────────────────────────────────────────
+
+
+class UserRole(str, Enum):
+    """User roles for UI permission control (PRD 30.3)."""
+
+    QUANT_RESEARCHER = "quant_researcher"
+    TRADER = "trader"
+    SYSTEM_ADMIN = "system_admin"
+
+
+class SessionStatus(str, Enum):
+    """User login session states."""
+
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    REVOKED = "revoked"

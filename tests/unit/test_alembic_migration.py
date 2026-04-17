@@ -19,6 +19,7 @@ from hqmts.db.models import (  # noqa: F401
     approval_request,
     audit,
     bar,
+    chat,
     controlled_execution,
     decision,
     execution,
@@ -35,6 +36,8 @@ from hqmts.db.models import (  # noqa: F401
     strategy,
     tool_invocation,
     trade,
+    user,
+    alert,
     version,
 )
 
@@ -80,7 +83,7 @@ class TestAlembicMigration:
         tables = _get_table_names(engine)
         engine.dispose()
 
-        assert len(tables) == 26
+        assert len(tables) == 32
         # Spot-check key tables
         assert "orders" in tables
         assert "signals" in tables
@@ -168,6 +171,8 @@ class TestAlembicMigration:
         cfg.set_main_option("script_location", "alembic")
         script = ScriptDirectory.from_config(cfg)
         revisions = list(script.walk_revisions())
-        assert len(revisions) == 2
-        assert revisions[0].revision == "002"
-        assert revisions[1].revision == "001"
+        assert len(revisions) == 4
+        assert revisions[0].revision == "004"
+        assert revisions[1].revision == "003"
+        assert revisions[2].revision == "002"
+        assert revisions[3].revision == "001"

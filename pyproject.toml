@@ -25,6 +25,8 @@ dependencies = [
     "tushare>=1.4.0",
     "pandas>=2.1.0",
     "numpy>=1.26.0",
+    "pyjwt>=2.12.1",
+    "bcrypt>=5.0.0",
 ]
 
 [project.scripts]

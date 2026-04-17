@@ -73,3 +73,17 @@ agent:
   max_concurrent_tasks: 5
   task_timeout_seconds: 300
   live_fail_closed: true
+
+# 认证配置
+auth:
+  secret_key: "change-me-in-production"
+  access_token_expire_minutes: 15
+  refresh_token_expire_days: 7
+  max_sessions: 3
+
+# LLM 配置
+llm:
+  openai_api_key: ""
+  openai_model: "gpt-4o-mini"
+  ollama_base_url: "http://localhost:11434"
+  ollama_model: "qwen2.5:7b"
