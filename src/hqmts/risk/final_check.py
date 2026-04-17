@@ -206,6 +206,13 @@ class FinalPreSubmitCheck:
         else:
             failed.append("params_invalid")
 
+        # 10b. Price staleness check
+        if ctx.stale_price_threshold_seconds > 0:
+            if ctx.reference_price_age_seconds > ctx.stale_price_threshold_seconds:
+                failed.append("stale_price")
+            else:
+                passed.append("price_fresh")
+
         # 11. Source legitimacy (not from agent)
         if ctx.source_is_deterministic:
             passed.append("source_deterministic")

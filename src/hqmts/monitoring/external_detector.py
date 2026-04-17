@@ -6,15 +6,27 @@ and determines appropriate auto-response based on confidence level.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
+from enum import Enum
 
-from hqmts.core.enums import Side
+from hqmts.core.enums import Side, StrategyStatus
 from hqmts.core.types import AccountId, ExternalEventId, InstrumentId, OrderId
 from hqmts.domain.external_event import ExternalManualEvent
 from hqmts.core.types import now_shanghai
+
+logger = logging.getLogger(__name__)
+
+
+class ExternalEventAction(str, Enum):
+    """Actions the system can take in response to external events."""
+    ESCALATE_PAUSE_OPEN = "escalate_pause_open"
+    ESCALATE_CLOSE_ONLY = "escalate_close_only"
+    ALERT_HUMAN = "alert_human"
+    LOG_ONLY = "log_only"
 
 
 @dataclass
@@ -107,19 +119,65 @@ class ExternalEventDetector:
 
         return events
 
-    def auto_respond(self, event: ExternalManualEvent, is_live: bool = True) -> str:
+    def auto_respond(self, event: ExternalManualEvent, is_live: bool = True) -> ExternalEventAction:
         """Determine auto-response action based on confidence and environment.
 
-        Returns action string: 'escalate_pause_open', 'alert_human', 'log_only'
+        Returns ExternalEventAction indicating what the caller should do.
         """
         if event.source_confidence == "high" and is_live:
-            return "escalate_pause_open"
+            return ExternalEventAction.ESCALATE_PAUSE_OPEN
         elif event.source_confidence == "high" and not is_live:
-            return "alert_human"
+            return ExternalEventAction.ALERT_HUMAN
         elif event.source_confidence == "medium":
-            return "alert_human"
+            return ExternalEventAction.ALERT_HUMAN
         else:
-            return "log_only"
+            return ExternalEventAction.LOG_ONLY
+
+    def determine_strategy_status(
+        self, action: ExternalEventAction,
+    ) -> StrategyStatus | None:
+        """Map an ExternalEventAction to the required strategy status transition.
+
+        Returns None if no transition needed (log_only, alert_human).
+        """
+        if action == ExternalEventAction.ESCALATE_PAUSE_OPEN:
+            return StrategyStatus.PAUSE_OPEN
+        elif action == ExternalEventAction.ESCALATE_CLOSE_ONLY:
+            return StrategyStatus.CLOSE_ONLY
+        return None
+
+    def execute_response(
+        self,
+        events: list[ExternalManualEvent],
+        is_live: bool = True,
+    ) -> list[tuple[ExternalManualEvent, ExternalEventAction]]:
+        """Evaluate all events and determine responses.
+
+        Returns list of (event, action) pairs. The caller is responsible for
+        actually transitioning strategy state and persisting events.
+        Logs escalate-level responses as warnings.
+        """
+        results: list[tuple[ExternalManualEvent, ExternalEventAction]] = []
+        for event in events:
+            action = self.auto_respond(event, is_live=is_live)
+            results.append((event, action))
+
+            if action in (
+                ExternalEventAction.ESCALATE_PAUSE_OPEN,
+                ExternalEventAction.ESCALATE_CLOSE_ONLY,
+            ):
+                logger.warning(
+                    "EXTERNAL_EVENT_ESCALATE event=%s type=%s confidence=%s action=%s",
+                    event.external_event_id, event.event_type,
+                    event.source_confidence, action.value,
+                )
+            elif action == ExternalEventAction.ALERT_HUMAN:
+                logger.info(
+                    "EXTERNAL_EVENT_ALERT event=%s type=%s",
+                    event.external_event_id, event.event_type,
+                )
+
+        return results
 
     def _classify_event(self, broker_trade: BrokerTrade) -> str:
         """Classify the type of external event."""

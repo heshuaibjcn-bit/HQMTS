@@ -168,3 +168,22 @@ class TestFinalPreSubmitCheck:
         passing_context.quantity = 250
         result = await check.execute(passing_context)
         assert "position_insufficient" in result.failed_checks
+
+    @pytest.mark.asyncio
+    async def test_stale_price_rejected(self, check, passing_context):
+        """Price older than threshold is flagged as stale (escalates to manual)."""
+        passing_context.stale_price_threshold_seconds = 30
+        passing_context.reference_price_age_seconds = 45.0
+        result = await check.execute(passing_context)
+        assert "stale_price" in result.failed_checks
+        # stale_price is not a critical failure, so it escalates to manual
+        assert result.result == FinalCheckResult.ESCALATE_MANUAL
+
+    @pytest.mark.asyncio
+    async def test_fresh_price_passes(self, check, passing_context):
+        """Price within threshold passes."""
+        passing_context.stale_price_threshold_seconds = 30
+        passing_context.reference_price_age_seconds = 10.0
+        result = await check.execute(passing_context)
+        assert "price_fresh" in result.passed_checks
+        assert result.result == FinalCheckResult.ALLOW

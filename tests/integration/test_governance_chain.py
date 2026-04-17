@@ -93,15 +93,19 @@ class TestAgentGovernanceService:
 
     @pytest.mark.asyncio
     async def test_full_chain_with_approval(self, service, session):
-        """Full chain: create -> proposal -> policy -> approval -> execution."""
+        """Full chain: create -> proposal -> policy -> approval -> execution.
+
+        Uses RESEARCH environment so auto-approve (approver param) is allowed.
+        In LIVE, auto-approve is blocked to enforce manual review.
+        """
         result = await service.run_full_pipeline(
             agent_role=AgentRole.MONITORING.value,
-            environment=Environment.LIVE.value,
+            environment=Environment.RESEARCH.value,
             task_type="risk_action",
             proposal_type="close_only",
             target_object_type="strategy_instance",
             target_object_id="strat-003",
-            approver="human_admin",  # Auto-approve for this test
+            approver="human_admin",  # Auto-approve allowed in non-Live
         )
 
         assert isinstance(result, ControlledExecution)

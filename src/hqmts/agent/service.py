@@ -476,7 +476,8 @@ class AgentGovernanceService:
             await self._wait_task(task.agent_task_id)
 
             # If approver provided, auto-approve for testing
-            if approver:
+            # Guard: auto-approve only allowed in non-Live environments
+            if approver and environment != Environment.LIVE.value:
                 approval = await self.process_approval_decision(
                     approval_request_id=approval.approval_request_id,
                     approver=approver,
