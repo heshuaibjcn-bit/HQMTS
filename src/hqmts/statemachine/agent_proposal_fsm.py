@@ -18,6 +18,7 @@ AGENT_PROPOSAL_TRANSITIONS: dict[ProposalStatus, set[ProposalStatus]] = {
     ProposalStatus.POLICY_CHECKING: {
         ProposalStatus.POLICY_REJECTED,
         ProposalStatus.PENDING_APPROVAL,
+        ProposalStatus.APPROVED,
         ProposalStatus.CANCELED,
     },
     ProposalStatus.POLICY_REJECTED: set(),  # Terminal

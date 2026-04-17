@@ -14,6 +14,7 @@ from enum import Enum
 
 from hqmts.core.enums import ReconciliationStatus
 from hqmts.core.types import ReconciliationId
+from hqmts.statemachine.reconciliation_fsm import reconciliation_fsm
 
 
 class ReconcileScope(str, Enum):
@@ -58,7 +59,16 @@ class ReconciliationService:
 
     Agent can analyze mismatches and generate correction proposals,
     but cannot directly execute corrections.
+
+    FSM lifecycle: INITIALIZED -> COMPARING -> MATCHED/MISMATCHED -> COMPLETED/ADJUSTING/ESCALATED
     """
+
+    @staticmethod
+    def validate_transition(
+        current: ReconciliationStatus, target: ReconciliationStatus,
+    ) -> ReconciliationStatus:
+        """Validate a state transition via FSM. Raises on illegal transition."""
+        return reconciliation_fsm.transition(current, target)
 
     async def reconcile_orders(
         self,

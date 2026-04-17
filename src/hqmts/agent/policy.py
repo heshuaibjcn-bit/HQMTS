@@ -150,6 +150,10 @@ class PolicyEngine:
         """Set global kill switch state."""
         self._global_kill_switch = active
 
+    def is_kill_switch_active(self) -> bool:
+        """Check if global kill switch is active."""
+        return self._global_kill_switch
+
     def set_live_trading_allowed(self, allowed: bool) -> None:
         """Set whether live trading is allowed."""
         self._live_trading_allowed = allowed

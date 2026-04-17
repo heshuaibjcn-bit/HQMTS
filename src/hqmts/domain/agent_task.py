@@ -44,8 +44,8 @@ class AgentTask(BaseModel):
         return self.status in (
             AgentTaskStatus.COMPLETED,
             AgentTaskStatus.FAILED,
-            AgentTaskStatus.TIMEOUT,
             AgentTaskStatus.CANCELED,
+            AgentTaskStatus.ESCALATED,
         )
 
     def can_produce_proposals(self) -> bool:

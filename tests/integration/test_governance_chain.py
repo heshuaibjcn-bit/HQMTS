@@ -67,7 +67,7 @@ class TestAgentGovernanceService:
         )
 
         assert isinstance(result, ControlledExecution)
-        assert result.execution_status == ExecutionStatus.PENDING
+        assert result.execution_status == ExecutionStatus.EXECUTING
         assert result.action_type == "pause_open"
         assert result.target_object_id == "strat-001"
 
@@ -105,7 +105,7 @@ class TestAgentGovernanceService:
         )
 
         assert isinstance(result, ControlledExecution)
-        assert result.execution_status == ExecutionStatus.PENDING
+        assert result.execution_status == ExecutionStatus.EXECUTING
 
         await session.commit()
 
@@ -154,7 +154,7 @@ class TestAgentGovernanceService:
         # Step 5: Execute
         execution = await service.execute_proposal(proposal.proposal_id)
         assert isinstance(execution, ControlledExecution)
-        assert execution.execution_status == ExecutionStatus.PENDING
+        assert execution.execution_status == ExecutionStatus.EXECUTING
         assert execution.source_proposal_id == proposal.proposal_id
         await session.commit()
 

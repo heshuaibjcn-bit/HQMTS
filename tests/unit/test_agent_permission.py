@@ -136,14 +136,15 @@ class TestToolGateway:
         return ToolGateway(engine)
 
     @pytest.mark.asyncio
-    async def test_forbidden_tool_raises(self, gateway):
-        with pytest.raises(ForbiddenToolAttemptError):
-            await gateway.invoke(ToolCallRequest(
-                agent_role=AgentRole.ORCHESTRATOR,
-                agent_task_id="task-001",
-                tool_name="qmt_submit_order",
-                environment=Environment.LIVE,
-            ))
+    async def test_forbidden_tool_returns_denied(self, gateway):
+        result = await gateway.invoke(ToolCallRequest(
+            agent_role=AgentRole.ORCHESTRATOR,
+            agent_task_id="task-001",
+            tool_name="qmt_submit_order",
+            environment=Environment.LIVE,
+        ))
+        assert result.status == "denied"
+        assert result.side_effect_level == SideEffectLevel.FORBIDDEN_ATTEMPT
 
     @pytest.mark.asyncio
     async def test_read_only_passes(self, gateway):
@@ -242,14 +243,14 @@ class TestAgentBoundaryHardening:
     @pytest.mark.asyncio
     async def test_agent_cannot_bypass_gateway(self, gateway):
         """Agent cannot invoke tools without going through the ToolGateway."""
-        # Attempting to call a forbidden tool through the gateway raises
-        with pytest.raises(ForbiddenToolAttemptError):
-            await gateway.invoke(ToolCallRequest(
-                agent_role=AgentRole.ORCHESTRATOR,
-                agent_task_id="task-bypass",
-                tool_name="qmt_submit_order",
-                environment=Environment.LIVE,
-            ))
+        result = await gateway.invoke(ToolCallRequest(
+            agent_role=AgentRole.ORCHESTRATOR,
+            agent_task_id="task-bypass",
+            tool_name="qmt_submit_order",
+            environment=Environment.LIVE,
+        ))
+        assert result.status == "denied"
+        assert result.side_effect_level == SideEffectLevel.FORBIDDEN_ATTEMPT
 
     @pytest.mark.asyncio
     async def test_research_agent_cannot_access_live_tools(self, gateway):
@@ -350,13 +351,14 @@ class TestAgentBoundaryHardening:
     @pytest.mark.asyncio
     async def test_agent_cannot_create_orders_directly(self, gateway):
         """Agent has no tool to submit orders. qmt_submit_order is forbidden."""
-        with pytest.raises(ForbiddenToolAttemptError):
-            await gateway.invoke(ToolCallRequest(
-                agent_role=AgentRole.ORCHESTRATOR,
-                agent_task_id="task-order",
-                tool_name="qmt_submit_order",
-                environment=Environment.LIVE,
-            ))
+        result = await gateway.invoke(ToolCallRequest(
+            agent_role=AgentRole.ORCHESTRATOR,
+            agent_task_id="task-order",
+            tool_name="qmt_submit_order",
+            environment=Environment.LIVE,
+        ))
+        assert result.status == "denied"
+        assert result.side_effect_level == SideEffectLevel.FORBIDDEN_ATTEMPT
 
     @pytest.mark.asyncio
     async def test_agent_proposal_in_wrong_environment_rejected(self):

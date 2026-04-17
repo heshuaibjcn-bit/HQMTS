@@ -20,11 +20,11 @@ SAD V1.3 在 SAD V1.2 基础上不推翻既有架构，而是根据 PRD V1.3 的
 
 V1.3 的关键修订方向是：
 
-1. 明确 **Hermes Agent 是受控智能编排层，不是交易确定性内核**
-2. 强化 **确定性交易内核** 的中心地位
-3. 明确 Agent 只能通过 **白名单 Tool / Control API / Transition API** 间接作用系统
-4. 增加 **AgentTask / AgentProposal / ToolInvocation / ApprovalRequest** 等治理对象
-5. 建立 **Proposal → Policy Check → Approval → Controlled Execution → Audit** 闭环
+1. 明确 **Hermes Agent 是受控智能编排层，不是交易确定性内核**
+2. 强化 **确定性交易内核** 的中心地位
+3. 明确 Agent 只能通过 **白名单 Tool / Control API / Transition API** 间接作用系统
+4. 增加 **AgentTask / AgentProposal / ToolInvocation / ApprovalRequest** 等治理对象
+5. 建立 **Proposal → Policy Check → Approval → Controlled Execution → Audit** 闭环
 6. 明确 Agent 的失败语义、幂等要求、超时策略和 fail-closed 原则
 7. 强化 Live 主路径与 Agent 的隔离
 8. 将 Agent 审计、权限、资源隔离提升为实施级架构约束
@@ -820,6 +820,24 @@ side_effect_level：
 - result_ref
 - failure_reason
 
+状态（5 个）：
+
+- pending
+- executing
+- completed
+- failed
+- expired
+
+合法迁移：
+
+|当前状态|允许迁移到|
+|---|---|
+|pending|executing, expired|
+|executing|completed, failed|
+|completed|终态|
+|failed|终态|
+|expired|终态|
+
 约束：
 
 1. ControlledExecution 必须由确定性服务执行
@@ -907,7 +925,7 @@ Agent 只能输出：
 
 系统统一原则：
 
-- 业务展示使用 `Asia/Shanghai`
+- 业务展示使用 `Asia/Shanghai`
 - 存储建议使用 UTC + 时区字段，或统一存本地时区但必须一致
 - 所有服务必须统一时区策略，不允许混用
 
@@ -923,7 +941,7 @@ Agent 只能输出：
 |signal_created_at|Signal 持久化时间|系统本地时间|
 |submit_attempt_time|调用 QMT 前时间|Execution Service|
 |broker_accept_time|券商接受时间|QMT回报/查询|
-|trade_time|成交时间|QMT成交回报/查询|
+|traded_at|成交时间|QMT成交回报/查询|
 |snapshot_time|账户/持仓快照时间|查询时刻|
 |agent_task_started_at|Agent 任务开始时间|Agent Runtime|
 |tool_invoked_at|Tool 调用开始时间|Tool Gateway|
@@ -935,7 +953,7 @@ Agent 只能输出：
 
 - Live 节点必须启用时间同步
 - 时间偏移超阈值触发告警
-- 偏移严重时进入 `pause_open`
+- 偏移严重时进入 `pause_open`
 - Agent Runtime 与 Tool Gateway 也必须记录统一时间基准
 - 审批、Tool 调用、ControlledExecution 必须能按时间线重建
 
@@ -1241,49 +1259,48 @@ Paper 必须共享：
 
 ## 15.1 Order 状态机
 
-推荐状态：
+状态（10 个）：
 
-- created
-- submitting
+- pending
 - submitted
 - accepted
-- partially_filled
+- partial_filled
 - filled
-- cancel_pending
 - canceled
 - rejected
+- error
+- suspended
 - expired
-- uncertain
 
-合法迁移沿用 V1.2：
+合法迁移：
 
 |当前状态|允许迁移到|
 |---|---|
-|created|submitting, rejected, expired|
-|submitting|submitted, rejected, uncertain|
-|submitted|accepted, partially_filled, filled, cancel_pending, rejected, uncertain|
-|accepted|partially_filled, filled, cancel_pending, canceled, rejected, uncertain|
-|partially_filled|partially_filled, filled, cancel_pending, canceled, uncertain|
-|cancel_pending|canceled, partially_filled, filled, uncertain|
-|rejected|终态|
+|pending|submitted, canceled|
+|submitted|accepted, rejected, canceled|
+|accepted|partial_filled, filled, canceled|
+|partial_filled|partial_filled, filled, canceled|
 |filled|终态|
 |canceled|终态|
+|rejected|终态|
+|error|accepted, partial_filled, filled, canceled, rejected, expired|
+|suspended|accepted, canceled|
 |expired|终态|
-|uncertain|accepted, partially_filled, filled, canceled, rejected, expired|
 
 约束：
 
-1. `uncertain` 为恢复或乱序修正的过渡态
-2. 非法迁移必须被拒绝并记录审计
-3. 查询结果可触发 correction 迁移，但必须留痕
-4. Agent 不得直接触发 Order 状态迁移
+1. `error` 为恢复或乱序修正的过渡态，可恢复到多种终态
+2. `suspended` 为交易所/券商侧暂停状态，可恢复或撤销
+3. 非法迁移必须被拒绝并记录审计
+4. 查询结果可触发 correction 迁移，但必须留痕
+5. Agent 不得直接触发 Order 状态迁移
 
 ---
 
 ## 15.2 Trade 幂等规则
 
-- Trade 以 `broker_trade_id` 为幂等主键
-- 同一 `broker_trade_id` 重复到达必须忽略重复写入
+- Trade 以 `broker_trade_id` 为幂等主键
+- 同一 `broker_trade_id` 重复到达必须忽略重复写入
 - Trade 一经确认，不允许修改核心成交字段
 - 如券商更正成交，必须以 CorrectionEvent 形式处理
 - Agent 只能生成成交差异分析，不得修改 Trade
@@ -1292,57 +1309,74 @@ Paper 必须共享：
 
 ## 15.3 StrategyInstance 状态机
 
-状态：
+状态（10 个）：
 
 - draft
-- approved
+- backtest_ready
+- validation_ready
 - paper_running
-- live_preparing
-- pause_open
 - live_running
+- pause_open
 - close_only
 - stopped
-- failed
-- recovering
+- paused
+- archived
 
 关键迁移：
 
 |当前状态|允许迁移到|
 |---|---|
-|draft|approved, stopped|
-|approved|paper_running, live_preparing, stopped|
-|paper_running|approved, stopped, failed|
-|live_preparing|pause_open, failed, stopped|
-|pause_open|live_running, close_only, stopped, recovering|
-|live_running|pause_open, close_only, recovering, failed, stopped|
-|close_only|pause_open, stopped, recovering|
-|recovering|pause_open, close_only, failed|
-|failed|recovering, stopped|
-|stopped|approved|
+|draft|backtest_ready, archived|
+|backtest_ready|validation_ready, draft, archived|
+|validation_ready|paper_running, backtest_ready, archived|
+|paper_running|live_running, validation_ready, paused, archived|
+|live_running|pause_open, close_only, stopped, archived|
+|pause_open|live_running, close_only, stopped|
+|close_only|pause_open, stopped|
+|stopped|draft, archived|
+|paused|paper_running, stopped|
+|archived|终态|
 
 约束：
 
 1. 进入 live_running 必须经过审批或明确规则授权
 2. Agent 不得自动将策略恢复为 live_running
 3. Agent 可创建恢复或上线 Proposal
+4. `archived` 为唯一终态
 
 ---
 
 ## 15.4 Reconciliation 状态机
 
-状态：
+状态（9 个）：
 
-- pending
-- running
+- initialized
+- comparing
 - matched
-- mismatch_detected
-- corrected
+- mismatched
+- adjusting
+- completed
+- failed
+- canceled
 - escalated
-- closed
+
+合法迁移：
+
+|当前状态|允许迁移到|
+|---|---|
+|initialized|comparing, canceled|
+|comparing|matched, mismatched, failed|
+|matched|completed|
+|mismatched|adjusting, escalated|
+|adjusting|completed, failed|
+|completed|终态|
+|failed|终态|
+|canceled|终态|
+|escalated|终态|
 
 Agent 角色：
 
-- 可分析 mismatch
+- 可分析 mismatched 差异
 - 可生成 correction proposal
 - 不得直接执行 correction 生效
 
@@ -1350,23 +1384,34 @@ Agent 角色：
 
 ## 15.5 RecoverySession 状态机
 
-状态：
+状态（7 个）：
 
 - created
-- loading_state
-- reconciling
-- rebuilding_context
-- pending_confirmation
+- diagnosing
+- recovering
+- verifying
 - completed
-- aborted
-- escalated
+- failed
+- canceled
+
+合法迁移：
+
+|当前状态|允许迁移到|
+|---|---|
+|created|diagnosing, canceled|
+|diagnosing|recovering, failed, canceled|
+|recovering|verifying, failed|
+|verifying|completed, recovering, failed|
+|completed|终态|
+|failed|终态|
+|canceled|终态|
 
 Agent 角色：
 
 - 可生成恢复建议
 - 可汇总异常链路
 - 可协助生成恢复报告
-- 不得绕过 pending_confirmation
+- 不得绕过 verifying 人工确认
 
 ---
 
@@ -1413,13 +1458,14 @@ Agent 角色：
 |当前状态|允许迁移到|
 |---|---|
 |drafted|policy_checking, canceled|
-|policy_checking|policy_rejected, pending_approval, approved|
+|policy_checking|policy_rejected, pending_approval, approved, canceled|
 |pending_approval|approved, rejected, expired, canceled|
-|approved|execution_pending, expired, canceled|
-|execution_pending|executed, execution_failed, escalated|
+|approved|execution_pending|
+|execution_pending|executed, execution_failed, expired|
 |policy_rejected|终态|
 |rejected|终态|
 |executed|终态|
+|execution_failed|终态|
 |expired|终态|
 |canceled|终态|
 
@@ -1428,6 +1474,7 @@ Agent 角色：
 1. policy_rejected 不得继续执行
 2. expired 不得执行
 3. Live 高风险 Proposal 不得跳过 pending_approval
+4. execution_failed 为终态
 
 ---
 
@@ -1466,11 +1513,11 @@ Agent 角色：
 ## 16.2 资金预占原则
 
 1. 新开仓必须先完成资金预占
-2. 同一账户资金预占以 `account_id` 串行仲裁
+2. 同一账户资金预占以 `account_id` 串行仲裁
 3. 预占为本地风控执行语义，不等价于券商真实冻结
 4. 风险判断时使用：
     - `QMT available_cash`
-    - 减去 `active reservations`
+    - 减去 `active reservations`
     - 取保守值
 
 ---
@@ -1580,7 +1627,7 @@ force_flatten > reject > resize > delay > allow
 
 ---
 
-## 18.3 `force_flatten` 语义
+## 18.3 `force_flatten` 语义
 
 `force_flatten` 是风控动作，不依赖策略再生成 Signal。
 
@@ -1661,7 +1708,7 @@ Final Pre-Submit Check 是真实调用 QMT 下单前最后不可绕过的同步�
 1. Final Check 必须同步执行
 2. Final Check 不得被 Agent、策略或配置绕过
 3. Final Check 失败必须写入审计和 Execution Journal
-4. `retry_later` 不得无限重试
+4. `retry_later` 不得无限重试
 5. 非确定性服务生成的 OrderRequest 必须拒绝
 
 ---
@@ -1686,6 +1733,11 @@ Final Pre-Submit Check 是真实调用 QMT 下单前最后不可绕过的同步�
 12. unknown_reject
 13. unauthorized_source
 14. policy_blocked
+15. kill_switch
+16. signal_expired
+17. strategy_not_live
+18. market_closed
+19. order_frequency_exceeded
 
 ---
 
@@ -1704,9 +1756,14 @@ Final Pre-Submit Check 是真实调用 QMT 下单前最后不可绕过的同步�
 |insufficient_position|reject + 对账|
 |risk_reject|reject|
 |duplicate_submit|幂等拦截，查询状态|
-|unknown_reject|uncertain / escalated|
+|unknown_reject|error / escalated|
 |unauthorized_source|reject + 安全告警|
 |policy_blocked|reject + 审计|
+|kill_switch|reject + 立即告警 + 停止新开仓|
+|signal_expired|reject + 告警|
+|strategy_not_live|reject + 状态检查|
+|market_closed|reject + 告警|
+|order_frequency_exceeded|reject + 限流告警|
 
 ---
 
@@ -1749,9 +1806,9 @@ Final Pre-Submit Check 是真实调用 QMT 下单前最后不可绕过的同步�
 
 1. 记录 ExternalManualEvent
 2. 执行持仓/账户对账
-3. StrategyInstance 至少进入 `pause_open`
-4. 若影响重大，进入 `close_only` 或 `recovering`
-5. 需要人工确认后才可恢复 `live_running`
+3. StrategyInstance 至少进入 `pause_open`
+4. 若影响重大，进入 `close_only` 或 `stopped`
+5. 需要人工确认后才可恢复 `live_running`
 
 ---
 
@@ -1788,7 +1845,7 @@ Agent 不可以：
 10. 检查外源交易
 11. 重建 DecisionSnapshot / Strategy Context 必要部分
 12. 建立 RecoverySession
-13. 默认进入 `pause_open`
+13. 默认进入 `pause_open`
 14. 等待人工或规则批准恢复
 
 ---
@@ -1830,7 +1887,7 @@ Agent 不可：
 - 直接修改恢复状态机
 - 直接完成 correction
 - 直接恢复 Live 正常交易
-- 绕过 pending_confirmation
+- 绕过 verifying（人工确认环节）
 
 ---
 
@@ -1850,17 +1907,17 @@ Agent 不可：
 
 ## 23.2 QMT 回报异常
 
-- 切换到 `query_primary`
+- 切换到 `query_primary`
 - 禁止高风险新开仓
 - 加密查询频率进行对账
-- 必要时进入 `pause_open`
+- 必要时进入 `pause_open`
 
 ---
 
 ## 23.3 QMT 查询异常
 
-- 若回报仍正常，可暂维持 `event_primary`
-- 若查询与回报均异常，进入 `degraded` / `close_only`
+- 若回报仍正常，可暂维持 `event_primary`
+- 若查询与回报均异常，进入 `degraded` / `close_only`
 
 ---
 
@@ -1870,7 +1927,7 @@ Agent 不可：
 
 - 禁止新开仓
 - 禁止生成无法持久化的正式 OrderRequest
-- 系统进入 `pause_open` 或 `close_only`
+- 系统进入 `pause_open` 或 `close_only`
 
 例外：
 
@@ -1930,7 +1987,7 @@ Agent 不可：
 1. 立即阻止新开仓
 2. 撤销可撤开仓单
 3. 根据配置发起平仓或保守停机
-4. 进入 `emergency_stop` 或 `close_only`
+4. 进入 `emergency_stop` 或 `close_only`
 5. Agent 不得阻止 Kill Switch 生效
 
 ---
@@ -2445,7 +2502,7 @@ Agent 越权尝试默认不低于 P1。
 必须覆盖：
 
 - Order 非法迁移拒绝
-- uncertain 修正
+- error 状态修正
 - 查询结果 correction
 - StrategyInstance 恢复流程
 - AgentProposal 非法迁移拒绝
@@ -2647,9 +2704,9 @@ V1.3 的关键架构结论如下：
 5. 人工干预必须被识别为外源交易并触发降级与审计
 6. DB 不可用时默认禁止新开仓
 7. 事件系统依赖幂等、串行化和状态机，而不是 exactly-once
-8. `force_flatten` 是风控动作，不依赖策略二次确认
+8. `force_flatten` 是风控动作，不依赖策略二次确认
 9. Paper → Live 必须有结构化准入框架
-10. 恢复后默认 `pause_open`，不得自动冒进恢复
+10. 恢复后默认 `pause_open`，不得自动冒进恢复
 11. Hermes Agent 不得进入实盘下单主路径
 12. Agent 只能通过 Tool Gateway 和 Proposal / Approval / ControlledExecution 闭环作用系统
 13. Agent 输出不是事实源，不能替代交易数据库、审计系统和状态机

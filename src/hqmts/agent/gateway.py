@@ -8,6 +8,7 @@ violation interception.
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -25,6 +26,8 @@ from hqmts.core.exceptions import (
 )
 from hqmts.agent.policy import PolicyEngine, PolicyCheckInput
 from hqmts.agent.types import ALL_TOOLS, FORBIDDEN_TOOLS, ToolDefinition
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -88,12 +91,22 @@ class ToolGateway:
         start_time = time.monotonic()
         invocation_id = str(uuid.uuid4())
 
-        # Step 1: Forbidden tools check
+        # Step 1: Forbidden tools check — return audited result, don't throw
         if request.tool_name in FORBIDDEN_TOOLS:
-            raise ForbiddenToolAttemptError(
-                agent_role=request.agent_role.value,
+            result = ToolCallResult(
+                invocation_id=invocation_id,
                 tool_name=request.tool_name,
+                status="denied",
+                side_effect_level=SideEffectLevel.FORBIDDEN_ATTEMPT,
+                error=f"Forbidden tool: {request.tool_name}",
+                duration_ms=(time.monotonic() - start_time) * 1000,
             )
+            logger.warning(
+                "FORBIDDEN_TOOL_ATTEMPT invocation=%s role=%s tool=%s env=%s task=%s",
+                invocation_id, request.agent_role.value, request.tool_name,
+                request.environment.value, request.agent_task_id,
+            )
+            return result
 
         # Step 2: Tool existence
         tool_def = ALL_TOOLS.get(request.tool_name)
@@ -118,44 +131,55 @@ class ToolGateway:
         policy_output = self._policy_engine.evaluate(policy_input)
 
         if policy_output.result == PolicyCheckResult.FAIL:
-            return ToolCallResult(
+            elapsed = (time.monotonic() - start_time) * 1000
+            result = ToolCallResult(
                 invocation_id=invocation_id,
                 tool_name=request.tool_name,
                 status="denied",
                 side_effect_level=tool_def.side_effect_level,
                 error=policy_output.reason,
                 policy_result=policy_output.result,
-                duration_ms=(time.monotonic() - start_time) * 1000,
+                duration_ms=elapsed,
             )
+            self._audit_log(result, request)
+            return result
 
         # Step 4: Rate limit
         if not self._check_rate_limit(request.agent_task_id):
-            return ToolCallResult(
+            elapsed = (time.monotonic() - start_time) * 1000
+            result = ToolCallResult(
                 invocation_id=invocation_id,
                 tool_name=request.tool_name,
                 status="denied",
                 side_effect_level=tool_def.side_effect_level,
                 error="Rate limit exceeded",
                 policy_result=policy_output.result,
+                duration_ms=elapsed,
             )
+            self._audit_log(result, request)
+            return result
 
         # Step 5: Idempotency check for side-effect tools
         if tool_def.idempotent and request.idempotency_key is None:
-            return ToolCallResult(
+            elapsed = (time.monotonic() - start_time) * 1000
+            result = ToolCallResult(
                 invocation_id=invocation_id,
                 tool_name=request.tool_name,
                 status="failed",
                 side_effect_level=tool_def.side_effect_level,
                 error="Idempotent tool requires idempotency_key",
                 policy_result=policy_output.result,
+                duration_ms=elapsed,
             )
+            self._audit_log(result, request)
+            return result
 
         # Step 6 & 7: Return result with policy decision
         # (actual tool execution is delegated to handlers in production)
         elapsed = (time.monotonic() - start_time) * 1000
 
         if policy_output.result == PolicyCheckResult.MANUAL_REVIEW_REQUIRED:
-            return ToolCallResult(
+            result = ToolCallResult(
                 invocation_id=invocation_id,
                 tool_name=request.tool_name,
                 status="pending_approval",
@@ -164,8 +188,10 @@ class ToolGateway:
                 policy_result=policy_output.result,
                 duration_ms=elapsed,
             )
+            self._audit_log(result, request)
+            return result
 
-        return ToolCallResult(
+        result = ToolCallResult(
             invocation_id=invocation_id,
             tool_name=request.tool_name,
             status="success",
@@ -173,6 +199,8 @@ class ToolGateway:
             policy_result=policy_output.result,
             duration_ms=elapsed,
         )
+        self._audit_log(result, request)
+        return result
 
     def _check_rate_limit(self, agent_task_id: str) -> bool:
         """Check if the agent task is within rate limits."""
@@ -198,3 +226,31 @@ class ToolGateway:
         timestamps.append(now)
         self._call_timestamps[agent_task_id] = timestamps
         return True
+
+    def _audit_log(
+        self, result: ToolCallResult, request: ToolCallRequest,
+    ) -> None:
+        """Record tool invocation audit event.
+
+        Per SAD 24.3 item 7, all tool calls must be audited.
+        Uses structured logging so consumers can persist to audit store.
+        """
+        logger.info(
+            "TOOL_INVOCATION invocation=%s tool=%s role=%s env=%s task=%s "
+            "status=%s side_effect=%s duration_ms=%.1f idem_key=%s",
+            result.invocation_id,
+            result.tool_name,
+            request.agent_role.value,
+            request.environment.value,
+            request.agent_task_id,
+            result.status,
+            result.side_effect_level.value,
+            result.duration_ms,
+            request.idempotency_key or "-",
+        )
+        if result.status == "denied":
+            logger.warning(
+                "TOOL_DENIED invocation=%s tool=%s role=%s error=%s",
+                result.invocation_id, result.tool_name,
+                request.agent_role.value, result.error,
+            )

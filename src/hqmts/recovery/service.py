@@ -23,6 +23,7 @@ from hqmts.db.repositories.order_repo import OrderRepository
 from hqmts.db.repositories.reservation_repo import ReservationRepository
 from hqmts.reconciliation.service import ReconciliationService
 from hqmts.reservation.manager import ReservationManager
+from hqmts.statemachine.recovery_fsm import recovery_fsm
 from hqmts.core.types import now_shanghai
 
 
@@ -501,6 +502,10 @@ class RecoveryService:
                 description="Establish RecoverySession",
                 status="failed", result="No recovery context provided",
             )
+        # FSM validation: CREATED -> DIAGNOSING -> RECOVERING
+        recovery_fsm.transition(RecoveryStatus.CREATED, RecoveryStatus.DIAGNOSING)
+        recovery_fsm.transition(RecoveryStatus.DIAGNOSING, RecoveryStatus.RECOVERING)
+
         now = now_shanghai()
         orm = RecoverySessionORM(
             recovery_session_id=session_id,
