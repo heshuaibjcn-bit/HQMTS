@@ -97,6 +97,22 @@ class PolicyEngine:
                 f"for tool:{input_data.tool_name}"
             )
 
+        # Check 3: Target object state (controlled operations require valid target)
+        if tool_def.category == ToolCategory.CONTROLLED_OPERATION:
+            if input_data.target_object_type and not input_data.target_object_id:
+                violations.append(
+                    "target_object_id_required_for_controlled_operation"
+                )
+
+        # Check 6: Risk boundary violation (Live controlled operations)
+        if (
+            input_data.environment == Environment.LIVE
+            and tool_def.category == ToolCategory.CONTROLLED_OPERATION
+            and input_data.proposal_type in ("close_only", "kill_switch")
+            and not input_data.has_version_binding
+        ):
+            violations.append("risk_boundary_violation_no_binding")
+
         # Check 10: Live-specific restrictions
         if input_data.environment == Environment.LIVE:
             if self._global_kill_switch and tool_def.category != ToolCategory.READ_ONLY:

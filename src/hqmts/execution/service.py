@@ -5,10 +5,11 @@ Coordinates the full signal → order pipeline.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from decimal import Decimal
 
-from hqmts.core.enums import FinalCheckResult, RiskResultType
+from hqmts.core.enums import FinalCheckResult, OrderStatus, RiskResultType
 from hqmts.core.exceptions import RiskRejectError
 from hqmts.domain.execution import ExecutionIntent, OrderRequest
 from hqmts.domain.signal import Signal
@@ -17,6 +18,8 @@ from hqmts.execution.reject_handler import RejectHandler
 from hqmts.reservation.manager import ReservationManager
 from hqmts.risk.engine import RiskContext, RiskEngine
 from hqmts.risk.final_check import FinalCheckContext, FinalPreSubmitCheck
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionService:
@@ -131,3 +134,53 @@ class ExecutionService:
                     reason="Pipeline exception during execution",
                 )
             raise
+
+    async def handle_fill(
+        self,
+        reservation_id: str | None,
+        fill_amount: Decimal,
+        order_id: str,
+    ) -> None:
+        """Handle order fill by consuming the cash reservation.
+
+        Called by the QMT callback handler when an order is filled.
+        Transitions reservation: active → partially_consumed / fully_consumed.
+        """
+        if not reservation_id:
+            return
+        try:
+            await self._reservation_manager.consume(reservation_id, fill_amount)
+            logger.info(
+                "RESERVATION_CONSUMED order=%s reservation=%s amount=%s",
+                order_id, reservation_id, fill_amount,
+            )
+        except Exception as exc:
+            logger.warning(
+                "RESERVATION_CONSUME_FAILED order=%s reservation=%s error=%s",
+                order_id, reservation_id, exc,
+            )
+
+    async def handle_order_failed(
+        self,
+        reservation_id: str | None,
+        order_id: str,
+        reason: str,
+    ) -> None:
+        """Handle order rejection/cancellation by releasing the reservation.
+
+        Called by the QMT callback handler when an order fails.
+        Transitions reservation: active → released.
+        """
+        if not reservation_id:
+            return
+        try:
+            await self._reservation_manager.release(reservation_id, reason=reason)
+            logger.info(
+                "RESERVATION_RELEASED order=%s reservation=%s reason=%s",
+                order_id, reservation_id, reason,
+            )
+        except Exception as exc:
+            logger.warning(
+                "RESERVATION_RELEASE_FAILED order=%s reservation=%s error=%s",
+                order_id, reservation_id, exc,
+            )

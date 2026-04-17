@@ -6,6 +6,7 @@ All operations for the same account are serialized via account_id.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -24,6 +25,9 @@ class ReservationManager:
 
     Conservative available cash calculation:
         effective_available = QMT_available_cash - sum(active_reservations)
+
+    Per-account serialization: operations for the same account_id are
+    serialized via asyncio.Lock to prevent TOCTOU races on available cash.
     """
 
     def __init__(
@@ -33,6 +37,7 @@ class ReservationManager:
     ) -> None:
         self._repo = reservation_repo
         self._ttl_seconds = ttl_seconds
+        self._account_locks: dict[str, asyncio.Lock] = {}
 
     async def get_effective_available_cash(
         self,
@@ -57,6 +62,12 @@ class ReservationManager:
         total_reserved = await self._repo.get_total_reserved_amount(account_id)
         return available_cash - total_reserved
 
+    def _get_lock(self, account_id: str) -> asyncio.Lock:
+        """Get or create per-account lock."""
+        if account_id not in self._account_locks:
+            self._account_locks[account_id] = asyncio.Lock()
+        return self._account_locks[account_id]
+
     async def reserve(
         self,
         account_id: AccountId,
@@ -67,6 +78,8 @@ class ReservationManager:
         available_cash: Decimal | None = None,
     ) -> CashReservation:
         """Create a new cash reservation.
+
+        Serialized per account_id to prevent TOCTOU races.
 
         Args:
             account_id: The shared account.
@@ -84,41 +97,42 @@ class ReservationManager:
                 "available_cash must be provided for sufficiency check. "
                 "Use get_effective_available_cash() to calculate it first."
             )
-        total_reserved = await self._repo.get_total_reserved_amount(account_id)
-        effective = available_cash - total_reserved
-        if amount > effective:
-            raise InsufficientFundsError(
-                f"Requested {amount}, effective available {effective}"
+        async with self._get_lock(str(account_id)):
+            total_reserved = await self._repo.get_total_reserved_amount(account_id)
+            effective = available_cash - total_reserved
+            if amount > effective:
+                raise InsufficientFundsError(
+                    f"Requested {amount}, effective available {effective}"
+                )
+
+            now = now_shanghai()
+            reservation = CashReservation(
+                reservation_id=ReservationId(str(uuid.uuid4())),
+                account_id=account_id,
+                strategy_instance_id=strategy_instance_id,
+                signal_id=signal_id,
+                execution_intent_id=execution_intent_id,
+                reserved_amount=amount,
+                consumed_amount=Decimal("0"),
+                status=ReservationStatus.ACTIVE,
+                expires_at=now + timedelta(seconds=self._ttl_seconds),
+                created_at=now,
+                updated_at=now,
             )
 
-        now = now_shanghai()
-        reservation = CashReservation(
-            reservation_id=ReservationId(str(uuid.uuid4())),
-            account_id=account_id,
-            strategy_instance_id=strategy_instance_id,
-            signal_id=signal_id,
-            execution_intent_id=execution_intent_id,
-            reserved_amount=amount,
-            consumed_amount=Decimal("0"),
-            status=ReservationStatus.ACTIVE,
-            expires_at=now + timedelta(seconds=self._ttl_seconds),
-            created_at=now,
-            updated_at=now,
-        )
-
-        # Persist via repo
-        orm = CashReservationORM(
-            reservation_id=reservation.reservation_id,
-            account_id=str(reservation.account_id),
-            strategy_instance_id=str(reservation.strategy_instance_id),
-            signal_id=reservation.signal_id,
-            execution_intent_id=reservation.execution_intent_id,
-            reserved_amount=reservation.reserved_amount,
-            consumed_amount=reservation.consumed_amount,
-            status=reservation.status.value,
-            expires_at=reservation.expires_at,
-        )
-        await self._repo.create(orm)
+            # Persist via repo
+            orm = CashReservationORM(
+                reservation_id=reservation.reservation_id,
+                account_id=str(reservation.account_id),
+                strategy_instance_id=str(reservation.strategy_instance_id),
+                signal_id=reservation.signal_id,
+                execution_intent_id=reservation.execution_intent_id,
+                reserved_amount=reservation.reserved_amount,
+                consumed_amount=reservation.consumed_amount,
+                status=reservation.status.value,
+                expires_at=reservation.expires_at,
+            )
+            await self._repo.create(orm)
 
         return reservation
 

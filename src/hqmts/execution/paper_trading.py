@@ -7,16 +7,24 @@ to a mock broker instead of real QMT.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
+from typing import TYPE_CHECKING
 
-from hqmts.core.enums import Cycle, Side, SignalType
+from hqmts.core.enums import Cycle, RiskResultType, Side, SignalType
 from hqmts.core.types import now_shanghai
 from hqmts.domain.bar import Bar
 from hqmts.domain.signal import Signal
+
+if TYPE_CHECKING:
+    from hqmts.risk.engine import RiskContext, RiskEngine
+    from hqmts.reservation.manager import ReservationManager
+
+logger = logging.getLogger(__name__)
 
 
 class PaperOrderStatus(str, Enum):
@@ -93,6 +101,9 @@ class PaperTradingEngine:
         commission_min: Decimal = Decimal("5"),
         stamp_tax_rate: Decimal = Decimal("0.001"),
         lot_size: int = 100,
+        risk_engine: RiskEngine | None = None,
+        reservation_manager: ReservationManager | None = None,
+        account_id: str | None = None,
     ) -> None:
         self._state = PaperTradingState(
             session_id=session_id,
@@ -105,12 +116,21 @@ class PaperTradingEngine:
         self._commission_min = commission_min
         self._stamp_tax_rate = stamp_tax_rate
         self._lot_size = lot_size
+        self._risk_engine = risk_engine
+        self._reservation_manager = reservation_manager
+        self._account_id = account_id
+        self._active_reservations: dict[str, str] = {}  # order_id -> reservation_id
 
     @property
     def state(self) -> PaperTradingState:
         return self._state
 
-    def submit_signal(self, signal: Signal, reference_price: Decimal) -> PaperOrder:
+    async def submit_signal(
+        self,
+        signal: Signal,
+        reference_price: Decimal,
+        risk_context: RiskContext | None = None,
+    ) -> PaperOrder:
         """Convert a signal into a paper order.
 
         Calculates quantity based on available cash (buy) or position (sell).
@@ -168,6 +188,76 @@ class PaperTradingEngine:
                 reject_reason="Insufficient cash or position",
             )
 
+        # Pre-trade risk check (if risk engine provided)
+        if self._risk_engine is not None and risk_context is not None:
+            risk_result = await self._risk_engine.evaluate(risk_context)
+            if risk_result.result_type == RiskResultType.REJECT:
+                logger.info(
+                    "PAPER_RISK_REJECT signal=%s reason=%s",
+                    signal.signal_id, risk_result.reject_reason,
+                )
+                return PaperOrder(
+                    order_id=str(uuid.uuid4()),
+                    signal_id=str(signal.signal_id),
+                    instrument_id=instrument_id,
+                    side=side,
+                    order_type="market",
+                    price=reference_price,
+                    quantity=0,
+                    status=PaperOrderStatus.REJECTED,
+                    reject_reason=f"Risk rejected: {risk_result.reject_reason}",
+                )
+            if risk_result.result_type == RiskResultType.DELAY:
+                return PaperOrder(
+                    order_id=str(uuid.uuid4()),
+                    signal_id=str(signal.signal_id),
+                    instrument_id=instrument_id,
+                    side=side,
+                    order_type="market",
+                    price=reference_price,
+                    quantity=0,
+                    status=PaperOrderStatus.REJECTED,
+                    reject_reason="Risk delayed",
+                )
+            # Resize: adjust quantity
+            if (
+                risk_result.result_type == RiskResultType.RESIZE
+                and risk_result.resized_quantity is not None
+            ):
+                quantity = min(quantity, risk_result.resized_quantity)
+
+        # Cash reservation for opening positions (if reservation manager provided)
+        reservation_id: str | None = None
+        opening_types = {SignalType.OPEN_LONG, SignalType.OPEN_SHORT}
+        if (
+            self._reservation_manager is not None
+            and signal.signal_type in opening_types
+            and reference_price > 0
+            and self._account_id is not None
+        ):
+            try:
+                reservation = await self._reservation_manager.reserve(
+                    account_id=self._account_id,  # type: ignore
+                    strategy_instance_id=signal.strategy_instance_id,
+                    amount=reference_price * quantity,
+                    signal_id=signal.signal_id,
+                    available_cash=self._state.cash,
+                )
+                reservation_id = reservation.reservation_id
+            except Exception as exc:
+                logger.warning("PAPER_RESERVE_FAILED signal=%s error=%s", signal.signal_id, exc)
+                return PaperOrder(
+                    order_id=str(uuid.uuid4()),
+                    signal_id=str(signal.signal_id),
+                    instrument_id=instrument_id,
+                    side=side,
+                    order_type="market",
+                    price=reference_price,
+                    quantity=0,
+                    status=PaperOrderStatus.REJECTED,
+                    reject_reason=f"Reservation failed: {exc}",
+                )
+
         order = PaperOrder(
             order_id=str(uuid.uuid4()),
             signal_id=str(signal.signal_id),
@@ -178,9 +268,11 @@ class PaperTradingEngine:
             quantity=quantity,
         )
         self._state.orders.append(order)
+        if reservation_id is not None:
+            self._active_reservations[order.order_id] = reservation_id
         return order
 
-    def fill_order(self, order: PaperOrder, fill_price: Decimal) -> PaperOrder:
+    async def fill_order(self, order: PaperOrder, fill_price: Decimal) -> PaperOrder:
         """Simulate order fill at the given price."""
         if order.status != PaperOrderStatus.PENDING:
             return order
@@ -199,6 +291,7 @@ class PaperTradingEngine:
             if total_cost > self._state.cash:
                 order.status = PaperOrderStatus.REJECTED
                 order.reject_reason = "Insufficient cash"
+                await self._release_reservation(order.order_id, "Insufficient cash on fill")
                 return order
             self._state.cash -= total_cost
             self._update_position_buy(order.instrument_id, order.quantity, fill_price)
@@ -212,6 +305,9 @@ class PaperTradingEngine:
         order.commission = commission
         order.stamp_tax = stamp_tax
         order.filled_at = now_shanghai()
+
+        # Consume reservation on fill
+        await self._consume_reservation(order.order_id, fill_price * Decimal(order.quantity))
 
         return order
 
@@ -271,3 +367,27 @@ class PaperTradingEngine:
             pos.available_quantity = max(0, pos.available_quantity - quantity)
             if pos.quantity == 0:
                 del self._state.positions[instrument_id]
+
+    async def _consume_reservation(self, order_id: str, fill_amount: Decimal) -> None:
+        """Consume reservation on successful fill."""
+        reservation_id = self._active_reservations.pop(order_id, None)
+        if reservation_id and self._reservation_manager:
+            try:
+                await self._reservation_manager.consume(reservation_id, fill_amount)
+            except Exception as exc:
+                logger.warning(
+                    "PAPER_CONSUME_FAILED order=%s reservation=%s error=%s",
+                    order_id, reservation_id, exc,
+                )
+
+    async def _release_reservation(self, order_id: str, reason: str) -> None:
+        """Release reservation on order rejection/failure."""
+        reservation_id = self._active_reservations.pop(order_id, None)
+        if reservation_id and self._reservation_manager:
+            try:
+                await self._reservation_manager.release(reservation_id, reason=reason)
+            except Exception as exc:
+                logger.warning(
+                    "PAPER_RELEASE_FAILED order=%s reservation=%s error=%s",
+                    order_id, reservation_id, exc,
+                )
