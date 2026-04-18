@@ -11,10 +11,10 @@ export function ActiveStrategiesCard() {
         <p className="text-sm text-[var(--color-text-secondary)]">活跃策略</p>
       </div>
       <p className="mt-1 text-2xl font-semibold">
-        {isLoading ? '--' : data?.active_strategy_count ?? 0}
+        {isLoading ? '--' : data?.active_strategies ?? 0}
       </p>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-        持仓 {isLoading ? '--' : data?.position_count ?? 0} 只
+        持仓 {isLoading ? '--' : data?.positions_count ?? 0} 只
       </p>
     </div>
   )

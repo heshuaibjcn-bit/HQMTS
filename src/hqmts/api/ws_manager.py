@@ -46,7 +46,10 @@ class ConnectionManager:
         role: str,
     ) -> None:
         """Accept and register a WebSocket connection."""
-        await websocket.accept(subprotocol="bearer")
+        # Only send subprotocol if client requested one
+        requested = websocket.headers.get("sec-websocket-protocol", "")
+        subprotocol = "bearer" if "bearer" in requested.lower() else None
+        await websocket.accept(subprotocol=subprotocol)
         conn = _Connection(
             websocket=websocket,
             user_id=user_id,

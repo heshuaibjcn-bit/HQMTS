@@ -23,7 +23,10 @@ export interface ChatMessage {
 export function useChatSessions() {
   return useQuery({
     queryKey: ['chat', 'sessions'],
-    queryFn: () => apiClient.get<ChatSession[]>('/chat/sessions'),
+    queryFn: async () => {
+      const result = await apiClient.get<{ sessions: ChatSession[]; total: number }>('/chat/sessions')
+      return result.sessions
+    },
   })
 }
 

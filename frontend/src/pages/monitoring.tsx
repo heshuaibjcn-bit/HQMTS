@@ -41,40 +41,40 @@ export function MonitoringPage() {
           <h2 className="mb-3 text-sm font-medium text-[var(--color-text)]">系统状态</h2>
           {healthLoading ? (
             <p className="text-sm text-[var(--color-text-muted)]">加载中...</p>
-          ) : health ? (
+          ) : health?.qmt ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <StatusDot ok={health.qmt.connected} />
+                  <StatusDot ok={health.qmt?.connected ?? false} />
                   <span className="text-[var(--color-text-secondary)]">QMT 连接</span>
                 </div>
-                <span className="text-[var(--color-text-muted)]">{health.qmt.latency_ms}ms</span>
+                <span className="text-[var(--color-text-muted)]">{health.qmt?.latency_ms ?? '--'}ms</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <StatusDot ok={health.data_source.connected} />
+                  <StatusDot ok={health.data_source?.connected ?? false} />
                   <span className="text-[var(--color-text-secondary)]">数据源</span>
                 </div>
-                <span className="text-[var(--color-text-muted)]">{health.data_source.latency_ms}ms</span>
+                <span className="text-[var(--color-text-muted)]">{health.data_source?.latency_ms ?? '--'}ms</span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <StatusDot ok={health.bar_aggregation.status === 'normal'} />
+                  <StatusDot ok={health.bar_aggregation?.status === 'normal'} />
                   <span className="text-[var(--color-text-secondary)]">Bar 聚合</span>
                 </div>
                 <span className="text-xs text-[var(--color-text-muted)]">
-                  {health.bar_aggregation.last_bar_time
+                  {health.bar_aggregation?.last_bar_time
                     ? formatTime(health.bar_aggregation.last_bar_time)
                     : '--'}
                 </span>
               </div>
               <div className="flex items-center justify-between text-sm">
                 <div className="flex items-center gap-2">
-                  <StatusDot ok={health.agent.status === 'running'} />
+                  <StatusDot ok={health.agent?.status === 'running'} />
                   <span className="text-[var(--color-text-secondary)]">Agent</span>
                 </div>
                 <span className="text-[var(--color-text-muted)]">
-                  {health.agent.active_tasks} 任务
+                  {health.agent?.active_tasks ?? 0} 任务
                 </span>
               </div>
             </div>

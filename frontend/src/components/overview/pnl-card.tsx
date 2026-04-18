@@ -13,8 +13,8 @@ export function PnLCard() {
     )
   }
 
-  const pnl = data?.today_pnl ?? 0
-  const pnlPct = data?.today_pnl_pct ?? 0
+  const pnl = data?.pnl_intraday ?? 0
+  const pnlPct = data?.drawdown_intraday ?? 0
   const isPositive = pnl >= 0
 
   return (

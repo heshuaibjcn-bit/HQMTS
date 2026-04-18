@@ -32,9 +32,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     """
     manager, settings = await _get_ws_manager(websocket)
 
-    # Authenticate via Sec-WebSocket-Protocol header
-    protocols = websocket.headers.get("sec-websocket-protocol", "")
-    token = _extract_token_from_protocols(protocols)
+    # Authenticate via query parameter or Sec-WebSocket-Protocol header
+    token = _extract_token_from_query(websocket) or _extract_token_from_protocols(
+        websocket.headers.get("sec-websocket-protocol", "")
+    )
 
     if not token:
         await websocket.close(code=4001, reason="Missing authentication")
@@ -108,6 +109,11 @@ def _extract_token_from_protocols(protocols: str) -> str | None:
     if len(parts) >= 2 and parts[0].lower() == "bearer":
         return parts[1]
     return None
+
+
+def _extract_token_from_query(websocket: WebSocket) -> str | None:
+    """Extract JWT from query parameter ?token=..."""
+    return websocket.query_params.get("token")
 
 
 async def _heartbeat_loop(

@@ -60,12 +60,11 @@ class WebSocketManager {
 
     this.setStatus('connecting')
 
-    const protocol = `bearer, ${token}`
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${
       window.location.host
-    }/ws`
+    }/ws?token=${encodeURIComponent(token)}`
 
-    this.ws = new WebSocket(wsUrl, protocol)
+    this.ws = new WebSocket(wsUrl)
 
     this.ws.onopen = () => {
       this.reconnectAttempts = 0
