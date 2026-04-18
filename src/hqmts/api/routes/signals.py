@@ -19,7 +19,7 @@ def _signal_to_dict(s: SignalORM) -> dict:
         "strategy_instance_id": s.strategy_instance_id,
         "instrument_id": s.instrument_id,
         "signal_type": s.signal_type,
-        "side": s.side,
+        "side": s.target_direction,
         "cycle": s.cycle,
         "decision_time": s.decision_time.isoformat() if s.decision_time else None,
         "valid_until": s.valid_until.isoformat() if s.valid_until else None,

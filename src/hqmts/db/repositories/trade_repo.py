@@ -26,7 +26,7 @@ class TradeRepository(BaseRepository[TradeORM]):
         stmt = (
             select(TradeORM)
             .where(TradeORM.order_id == order_id)
-            .order_by(TradeORM.trade_time)
+            .order_by(TradeORM.traded_at)
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
@@ -38,7 +38,7 @@ class TradeRepository(BaseRepository[TradeORM]):
         stmt = (
             select(TradeORM)
             .where(TradeORM.instrument_id == instrument_id)
-            .order_by(TradeORM.trade_time.desc())
+            .order_by(TradeORM.traded_at.desc())
             .limit(limit)
         )
         result = await self._session.execute(stmt)
