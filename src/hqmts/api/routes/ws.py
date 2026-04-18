@@ -71,8 +71,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             return
 
     # Heartbeat + message loop
+    heartbeat_task = asyncio.create_task(_heartbeat_loop(websocket, session_id, manager))
     try:
-        asyncio.create_task(_heartbeat_loop(websocket, session_id, manager))
         while True:
             raw = await websocket.receive_text()
             try:
@@ -95,6 +95,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     except Exception:
         logger.exception("WS error: user=%s session=%s", user_id, session_id)
     finally:
+        heartbeat_task.cancel()
         manager.disconnect(session_id)
 
 

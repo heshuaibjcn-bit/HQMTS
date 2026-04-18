@@ -60,7 +60,6 @@ async def create_session(
     user=Depends(get_current_user),
 ) -> dict:
     """Create a new chat session."""
-    settings = db.get_bind()  # Not the right way, use request
     repo = ChatSessionRepository(db)
 
     session_id = f"chat_{uuid.uuid4().hex[:12]}"

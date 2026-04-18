@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from functools import wraps
-from typing import Callable
-
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
