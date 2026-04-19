@@ -10,6 +10,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from hqmts.core.types import now_shanghai
+
 
 @dataclass(frozen=True)
 class VersionBinding:
@@ -30,7 +32,7 @@ class VersionBinding:
     tool_version: str = ""
     prompt_version: str = ""
     live_config_version: str = ""
-    created_at: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=now_shanghai)
 
 
 # In-memory store for testing / backtest. Production uses VersionBindingORM.

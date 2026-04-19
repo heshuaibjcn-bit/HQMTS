@@ -1,4 +1,4 @@
-"""Tests for Order state machine."""
+"""Tests for Order state machine (SAD 15.1)."""
 
 import pytest
 
@@ -10,53 +10,72 @@ from hqmts.statemachine.order_fsm import order_fsm
 class TestOrderFSM:
     """Tests based on SAD 15.1 Order state machine."""
 
-    def test_initial_transition(self):
-        result = order_fsm.transition(OrderStatus.CREATED, OrderStatus.SUBMITTING)
-        assert result == OrderStatus.SUBMITTING
+    # Basic transitions from CREATED
+    def test_created_to_pending_submit(self):
+        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.PENDING_SUBMIT)
 
-    def test_created_to_submitting(self):
-        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.SUBMITTING)
-
-    def test_created_to_rejected(self):
-        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.REJECTED)
-
-    def test_created_to_expired(self):
-        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.EXPIRED)
+    def test_created_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.CANCELED)
 
     def test_created_cannot_go_to_filled(self):
         assert not order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.FILLED)
 
-    def test_submitting_to_submitted(self):
-        assert order_fsm.can_transition(OrderStatus.SUBMITTING, OrderStatus.SUBMITTED)
+    # PENDING_SUBMIT transitions
+    def test_pending_submit_to_submitted(self):
+        assert order_fsm.can_transition(OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED)
 
-    def test_submitting_to_uncertain(self):
-        assert order_fsm.can_transition(OrderStatus.SUBMITTING, OrderStatus.UNCERTAIN)
+    def test_pending_submit_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.PENDING_SUBMIT, OrderStatus.CANCELED)
 
+    # SUBMITTED transitions
     def test_submitted_to_accepted(self):
         assert order_fsm.can_transition(OrderStatus.SUBMITTED, OrderStatus.ACCEPTED)
 
-    def test_submitted_to_partially_filled(self):
-        assert order_fsm.can_transition(OrderStatus.SUBMITTED, OrderStatus.PARTIALLY_FILLED)
+    def test_submitted_to_rejected(self):
+        assert order_fsm.can_transition(OrderStatus.SUBMITTED, OrderStatus.REJECTED)
 
-    def test_submitted_to_filled(self):
-        assert order_fsm.can_transition(OrderStatus.SUBMITTED, OrderStatus.FILLED)
+    def test_submitted_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.SUBMITTED, OrderStatus.CANCELED)
 
-    def test_partially_filled_self_loop(self):
-        assert order_fsm.can_transition(
-            OrderStatus.PARTIALLY_FILLED, OrderStatus.PARTIALLY_FILLED
-        )
+    # ACCEPTED transitions
+    def test_accepted_to_partial_filled(self):
+        assert order_fsm.can_transition(OrderStatus.ACCEPTED, OrderStatus.PARTIAL_FILLED)
 
-    def test_partially_filled_to_filled(self):
-        assert order_fsm.can_transition(OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED)
+    def test_accepted_to_filled(self):
+        assert order_fsm.can_transition(OrderStatus.ACCEPTED, OrderStatus.FILLED)
 
-    def test_uncertain_to_accepted(self):
-        assert order_fsm.can_transition(OrderStatus.UNCERTAIN, OrderStatus.ACCEPTED)
+    def test_accepted_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.ACCEPTED, OrderStatus.CANCELED)
 
-    def test_uncertain_to_canceled(self):
-        assert order_fsm.can_transition(OrderStatus.UNCERTAIN, OrderStatus.CANCELED)
+    # PARTIAL_FILLED transitions
+    def test_partial_filled_self_loop(self):
+        assert order_fsm.can_transition(OrderStatus.PARTIAL_FILLED, OrderStatus.PARTIAL_FILLED)
 
-    def test_uncertain_to_rejected(self):
-        assert order_fsm.can_transition(OrderStatus.UNCERTAIN, OrderStatus.REJECTED)
+    def test_partial_filled_to_filled(self):
+        assert order_fsm.can_transition(OrderStatus.PARTIAL_FILLED, OrderStatus.FILLED)
+
+    def test_partial_filled_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.PARTIAL_FILLED, OrderStatus.CANCELED)
+
+    # ERROR (recovery) transitions
+    def test_error_to_accepted(self):
+        assert order_fsm.can_transition(OrderStatus.ERROR, OrderStatus.ACCEPTED)
+
+    def test_error_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.ERROR, OrderStatus.CANCELED)
+
+    def test_error_to_rejected(self):
+        assert order_fsm.can_transition(OrderStatus.ERROR, OrderStatus.REJECTED)
+
+    def test_error_to_expired(self):
+        assert order_fsm.can_transition(OrderStatus.ERROR, OrderStatus.EXPIRED)
+
+    # SUSPENDED transitions
+    def test_suspended_to_accepted(self):
+        assert order_fsm.can_transition(OrderStatus.SUSPENDED, OrderStatus.ACCEPTED)
+
+    def test_suspended_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.SUSPENDED, OrderStatus.CANCELED)
 
     # Terminal states
     def test_filled_is_terminal(self):
@@ -86,10 +105,9 @@ class TestOrderFSM:
     # Valid transitions listing
     def test_valid_transitions_from_created(self):
         valid = order_fsm.valid_transitions(OrderStatus.CREATED)
-        assert OrderStatus.SUBMITTING in valid
-        assert OrderStatus.REJECTED in valid
-        assert OrderStatus.EXPIRED in valid
-        assert len(valid) == 3
+        assert OrderStatus.PENDING_SUBMIT in valid
+        assert OrderStatus.CANCELED in valid
+        assert len(valid) == 2
 
     def test_valid_transitions_from_terminal(self):
         valid = order_fsm.valid_transitions(OrderStatus.FILLED)
@@ -99,21 +117,37 @@ class TestOrderFSM:
         all_states = order_fsm.get_all_states()
         assert len(all_states) == 11
 
+    # Happy paths
     def test_full_happy_path(self):
-        """Test the happy path: created → submitting → submitted → filled."""
+        """Test the happy path: created → pending_submit → submitted → accepted → filled."""
         state = OrderStatus.CREATED
-        state = order_fsm.transition(state, OrderStatus.SUBMITTING)
-        assert state == OrderStatus.SUBMITTING
+        state = order_fsm.transition(state, OrderStatus.PENDING_SUBMIT)
+        assert state == OrderStatus.PENDING_SUBMIT
         state = order_fsm.transition(state, OrderStatus.SUBMITTED)
         assert state == OrderStatus.SUBMITTED
+        state = order_fsm.transition(state, OrderStatus.ACCEPTED)
+        assert state == OrderStatus.ACCEPTED
         state = order_fsm.transition(state, OrderStatus.FILLED)
         assert state == OrderStatus.FILLED
         assert order_fsm.is_terminal(state)
 
-    def test_uncertain_recovery_path(self):
-        """Test uncertain → accepted → partially_filled → filled."""
-        state = OrderStatus.UNCERTAIN
+    def test_error_recovery_path(self):
+        """Test error → accepted → partial_filled → filled."""
+        state = OrderStatus.ERROR
         state = order_fsm.transition(state, OrderStatus.ACCEPTED)
-        state = order_fsm.transition(state, OrderStatus.PARTIALLY_FILLED)
+        state = order_fsm.transition(state, OrderStatus.PARTIAL_FILLED)
         state = order_fsm.transition(state, OrderStatus.FILLED)
+        assert order_fsm.is_terminal(state)
+
+    def test_suspended_recovery_path(self):
+        """Test suspended → accepted → filled."""
+        state = OrderStatus.SUSPENDED
+        state = order_fsm.transition(state, OrderStatus.ACCEPTED)
+        state = order_fsm.transition(state, OrderStatus.FILLED)
+        assert order_fsm.is_terminal(state)
+
+    def test_cancel_from_created(self):
+        """Test created → canceled."""
+        state = OrderStatus.CREATED
+        state = order_fsm.transition(state, OrderStatus.CANCELED)
         assert order_fsm.is_terminal(state)

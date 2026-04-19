@@ -29,6 +29,7 @@ from hqmts.db.models import (  # noqa: F401
     reconciliation,
     recovery,
     reservation,
+    research_cycle,
     risk,
     signal,
     strategy,
@@ -45,7 +46,13 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    # Prefer the URL set in alembic.ini or via command-line config
+    import os
+    # If HQMTS_ENV is set, always use the matching config file
+    env = os.environ.get("HQMTS_ENV")
+    if env:
+        settings = load_settings(env)
+        return settings.database.url
+    # Otherwise prefer the URL set in alembic.ini
     ini_url = config.get_main_option("sqlalchemy.url")
     if ini_url:
         return ini_url

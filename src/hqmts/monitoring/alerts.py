@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from hqmts.core.enums import AlertLevel
+from hqmts.core.types import now_shanghai
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class Alert:
     value: float
     threshold: float
     message: str
-    detected_at: datetime = field(default_factory=datetime.now)
+    detected_at: datetime = field(default_factory=now_shanghai)
     routing_target: str = ""
     acknowledged: bool = False
 
@@ -143,6 +144,15 @@ P1_RULES: list[AlertRule] = [
         comparison="gt",
         unit="ms",
     ),
+    AlertRule(
+        name="agent_unauthorized_attempt",
+        metric="agent_unauthorized_attempt_count",
+        description="Agent attempted unauthorized action",
+        level=AlertLevel.P1,
+        threshold=0.0,
+        comparison="gt",
+        unit="count",
+    ),
 ]
 
 P2_RULES: list[AlertRule] = [
@@ -198,15 +208,6 @@ P3_RULES: list[AlertRule] = [
         name="agent_tool_failure",
         metric="agent_tool_failure_count",
         description="Agent tool invocation failed",
-        level=AlertLevel.P3,
-        threshold=0.0,
-        comparison="gt",
-        unit="count",
-    ),
-    AlertRule(
-        name="agent_unauthorized_attempt",
-        metric="agent_unauthorized_attempt_count",
-        description="Agent attempted unauthorized action",
         level=AlertLevel.P3,
         threshold=0.0,
         comparison="gt",

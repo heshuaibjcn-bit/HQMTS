@@ -42,6 +42,20 @@ ControlledExecutionId = NewType("ControlledExecutionId", str)
 PolicyCheckId = NewType("PolicyCheckId", str)
 CorrelationId = NewType("CorrelationId", str)
 
+# Next development phase IDs
+CorrectionEventId = NewType("CorrectionEventId", str)
+AdmissionId = NewType("AdmissionId", str)
+
+# Factor research IDs
+ResearchProjectId = NewType("ResearchProjectId", str)
+HypothesisId = NewType("HypothesisId", str)
+TrialPlanId = NewType("TrialPlanId", str)
+
+# Autonomous research cycle IDs (SAD 7.11-7.13)
+ResearchCycleId = NewType("ResearchCycleId", str)
+FactorDiscoveryId = NewType("FactorDiscoveryId", str)
+StrategyCandidateId = NewType("StrategyCandidateId", str)
+
 # ── Type Aliases ─────────────────────────────────────────────────────────────
 
 Price = Decimal

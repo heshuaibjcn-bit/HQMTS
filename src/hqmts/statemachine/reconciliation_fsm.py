@@ -1,7 +1,9 @@
 """Reconciliation state machine (SAD 15.4).
 
-States: pending, running, matched, mismatch_detected, corrected,
-        escalated, closed
+States: initialized, comparing, matched, mismatched, adjusting,
+        completed, failed, canceled, escalated
+
+Terminal states: completed, failed, canceled, escalated
 
 Agent role:
 - Can analyze mismatch
@@ -15,30 +17,35 @@ from hqmts.core.enums import ReconciliationStatus
 from hqmts.statemachine.base import StateMachine
 
 RECONCILIATION_TRANSITIONS: dict[ReconciliationStatus, set[ReconciliationStatus]] = {
-    ReconciliationStatus.PENDING: {ReconciliationStatus.RUNNING, ReconciliationStatus.CLOSED},
-    ReconciliationStatus.RUNNING: {
+    ReconciliationStatus.INITIALIZED: {
+        ReconciliationStatus.COMPARING,
+        ReconciliationStatus.CANCELED,
+    },
+    ReconciliationStatus.COMPARING: {
         ReconciliationStatus.MATCHED,
-        ReconciliationStatus.MISMATCH_DETECTED,
+        ReconciliationStatus.MISMATCHED,
+        ReconciliationStatus.FAILED,
+    },
+    ReconciliationStatus.MATCHED: {ReconciliationStatus.COMPLETED},
+    ReconciliationStatus.MISMATCHED: {
+        ReconciliationStatus.ADJUSTING,
         ReconciliationStatus.ESCALATED,
-        ReconciliationStatus.CLOSED,
     },
-    ReconciliationStatus.MATCHED: {ReconciliationStatus.CLOSED},
-    ReconciliationStatus.MISMATCH_DETECTED: {
-        ReconciliationStatus.CORRECTED,
-        ReconciliationStatus.ESCALATED,
-        ReconciliationStatus.CLOSED,
+    ReconciliationStatus.ADJUSTING: {
+        ReconciliationStatus.COMPLETED,
+        ReconciliationStatus.FAILED,
     },
-    ReconciliationStatus.CORRECTED: {ReconciliationStatus.CLOSED},
-    ReconciliationStatus.ESCALATED: {
-        ReconciliationStatus.MISMATCH_DETECTED,
-        ReconciliationStatus.CORRECTED,
-        ReconciliationStatus.CLOSED,
-    },
-    ReconciliationStatus.CLOSED: set(),  # Terminal
+    ReconciliationStatus.COMPLETED: set(),  # Terminal
+    ReconciliationStatus.FAILED: set(),  # Terminal
+    ReconciliationStatus.CANCELED: set(),  # Terminal
+    ReconciliationStatus.ESCALATED: set(),  # Terminal
 }
 
 RECONCILIATION_TERMINAL_STATES: set[ReconciliationStatus] = {
-    ReconciliationStatus.CLOSED,
+    ReconciliationStatus.COMPLETED,
+    ReconciliationStatus.FAILED,
+    ReconciliationStatus.CANCELED,
+    ReconciliationStatus.ESCALATED,
 }
 
 reconciliation_fsm = StateMachine[ReconciliationStatus](

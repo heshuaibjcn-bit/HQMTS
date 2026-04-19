@@ -24,7 +24,8 @@ class Account(BaseModel):
     pnl_intraday: Decimal = Decimal("0")
     drawdown_intraday: Decimal = Decimal("0")
     risk_status: str = "normal"  # normal, warning, danger
-    last_update_time: datetime
+    currency: str = "CNY"
+    updated_at: datetime
 
     @property
     def position_ratio(self) -> Decimal:

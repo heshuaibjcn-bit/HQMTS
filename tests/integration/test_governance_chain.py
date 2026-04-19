@@ -67,7 +67,7 @@ class TestAgentGovernanceService:
         )
 
         assert isinstance(result, ControlledExecution)
-        assert result.execution_status == ExecutionStatus.PENDING
+        assert result.execution_status == ExecutionStatus.EXECUTING
         assert result.action_type == "pause_open"
         assert result.target_object_id == "strat-001"
 
@@ -93,19 +93,23 @@ class TestAgentGovernanceService:
 
     @pytest.mark.asyncio
     async def test_full_chain_with_approval(self, service, session):
-        """Full chain: create -> proposal -> policy -> approval -> execution."""
+        """Full chain: create -> proposal -> policy -> approval -> execution.
+
+        Uses RESEARCH environment so auto-approve (approver param) is allowed.
+        In LIVE, auto-approve is blocked to enforce manual review.
+        """
         result = await service.run_full_pipeline(
             agent_role=AgentRole.MONITORING.value,
-            environment=Environment.LIVE.value,
+            environment=Environment.RESEARCH.value,
             task_type="risk_action",
             proposal_type="close_only",
             target_object_type="strategy_instance",
             target_object_id="strat-003",
-            approver="human_admin",  # Auto-approve for this test
+            approver="human_admin",  # Auto-approve allowed in non-Live
         )
 
         assert isinstance(result, ControlledExecution)
-        assert result.execution_status == ExecutionStatus.PENDING
+        assert result.execution_status == ExecutionStatus.EXECUTING
 
         await session.commit()
 
@@ -148,13 +152,13 @@ class TestAgentGovernanceService:
             environment=Environment.RESEARCH.value,
         )
         assert proposal.policy_result == PolicyCheckResult.PASS.value
-        assert proposal.approval_status == ProposalStatus.APPROVED.value
+        assert proposal.status == ProposalStatus.APPROVED
         await session.commit()
 
         # Step 5: Execute
         execution = await service.execute_proposal(proposal.proposal_id)
         assert isinstance(execution, ControlledExecution)
-        assert execution.execution_status == ExecutionStatus.PENDING
+        assert execution.execution_status == ExecutionStatus.EXECUTING
         assert execution.source_proposal_id == proposal.proposal_id
         await session.commit()
 
@@ -218,7 +222,7 @@ class TestAgentGovernanceService:
 
         # Verify proposal is now rejected
         proposal = await service._proposal_repo.get_domain(proposal.proposal_id)
-        assert proposal.approval_status == ProposalStatus.REJECTED.value
+        assert proposal.status == ProposalStatus.REJECTED
 
         # Execution should fail
         from hqmts.core.exceptions import AgentPermissionDeniedError

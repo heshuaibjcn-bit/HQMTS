@@ -1,13 +1,15 @@
 """Recovery session state machine (SAD 15.5).
 
-States: created, loading_state, reconciling, rebuilding_context,
-        pending_confirmation, completed, aborted, escalated
+States: created, diagnosing, recovering, verifying,
+        completed, failed, canceled
+
+Terminal states: completed, failed, canceled
 
 Agent role:
 - Can generate recovery suggestions
 - Can summarize exception chain
 - Can assist with recovery report generation
-- Cannot bypass pending_confirmation
+- Cannot bypass verifying
 """
 
 from __future__ import annotations
@@ -17,40 +19,32 @@ from hqmts.statemachine.base import StateMachine
 
 RECOVERY_TRANSITIONS: dict[RecoveryStatus, set[RecoveryStatus]] = {
     RecoveryStatus.CREATED: {
-        RecoveryStatus.LOADING_STATE,
-        RecoveryStatus.ABORTED,
+        RecoveryStatus.DIAGNOSING,
+        RecoveryStatus.CANCELED,
     },
-    RecoveryStatus.LOADING_STATE: {
-        RecoveryStatus.RECONCILING,
-        RecoveryStatus.ESCALATED,
-        RecoveryStatus.ABORTED,
+    RecoveryStatus.DIAGNOSING: {
+        RecoveryStatus.RECOVERING,
+        RecoveryStatus.FAILED,
+        RecoveryStatus.CANCELED,
     },
-    RecoveryStatus.RECONCILING: {
-        RecoveryStatus.REBUILDING_CONTEXT,
-        RecoveryStatus.ESCALATED,
-        RecoveryStatus.ABORTED,
+    RecoveryStatus.RECOVERING: {
+        RecoveryStatus.VERIFYING,
+        RecoveryStatus.FAILED,
     },
-    RecoveryStatus.REBUILDING_CONTEXT: {
-        RecoveryStatus.PENDING_CONFIRMATION,
-        RecoveryStatus.ESCALATED,
-        RecoveryStatus.ABORTED,
-    },
-    RecoveryStatus.PENDING_CONFIRMATION: {
+    RecoveryStatus.VERIFYING: {
         RecoveryStatus.COMPLETED,
-        RecoveryStatus.ESCALATED,
-        RecoveryStatus.ABORTED,
+        RecoveryStatus.RECOVERING,
+        RecoveryStatus.FAILED,
     },
     RecoveryStatus.COMPLETED: set(),  # Terminal
-    RecoveryStatus.ABORTED: set(),  # Terminal
-    RecoveryStatus.ESCALATED: {
-        RecoveryStatus.PENDING_CONFIRMATION,
-        RecoveryStatus.ABORTED,
-    },
+    RecoveryStatus.FAILED: set(),  # Terminal
+    RecoveryStatus.CANCELED: set(),  # Terminal
 }
 
 RECOVERY_TERMINAL_STATES: set[RecoveryStatus] = {
     RecoveryStatus.COMPLETED,
-    RecoveryStatus.ABORTED,
+    RecoveryStatus.FAILED,
+    RecoveryStatus.CANCELED,
 }
 
 recovery_fsm = StateMachine[RecoveryStatus](

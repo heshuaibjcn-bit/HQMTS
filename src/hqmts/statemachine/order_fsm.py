@@ -1,7 +1,7 @@
 """Order state machine (SAD 15.1).
 
-States: created, submitting, submitted, accepted, partially_filled, filled,
-        cancel_pending, canceled, rejected, expired, uncertain
+States: created, pending_submit, submitted, accepted, partial_filled, filled,
+        canceled, rejected, error, suspended, expired
 
 Terminal states: filled, canceled, rejected, expired
 """
@@ -13,49 +13,39 @@ from hqmts.statemachine.base import StateMachine
 
 # Transition table from SAD 15.1
 ORDER_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
-    OrderStatus.CREATED: {OrderStatus.SUBMITTING, OrderStatus.REJECTED, OrderStatus.EXPIRED},
-    OrderStatus.SUBMITTING: {OrderStatus.SUBMITTED, OrderStatus.REJECTED, OrderStatus.UNCERTAIN},
+    OrderStatus.CREATED: {OrderStatus.PENDING_SUBMIT, OrderStatus.CANCELED},
+    OrderStatus.PENDING_SUBMIT: {OrderStatus.SUBMITTED, OrderStatus.CANCELED},
     OrderStatus.SUBMITTED: {
         OrderStatus.ACCEPTED,
-        OrderStatus.PARTIALLY_FILLED,
-        OrderStatus.FILLED,
-        OrderStatus.CANCEL_PENDING,
         OrderStatus.REJECTED,
-        OrderStatus.UNCERTAIN,
+        OrderStatus.CANCELED,
     },
     OrderStatus.ACCEPTED: {
-        OrderStatus.PARTIALLY_FILLED,
+        OrderStatus.PARTIAL_FILLED,
         OrderStatus.FILLED,
-        OrderStatus.CANCEL_PENDING,
         OrderStatus.CANCELED,
-        OrderStatus.REJECTED,
-        OrderStatus.UNCERTAIN,
     },
-    OrderStatus.PARTIALLY_FILLED: {
-        OrderStatus.PARTIALLY_FILLED,
+    OrderStatus.PARTIAL_FILLED: {
+        OrderStatus.PARTIAL_FILLED,
         OrderStatus.FILLED,
-        OrderStatus.CANCEL_PENDING,
         OrderStatus.CANCELED,
-        OrderStatus.UNCERTAIN,
     },
     OrderStatus.FILLED: set(),  # Terminal
-    OrderStatus.CANCEL_PENDING: {
-        OrderStatus.CANCELED,
-        OrderStatus.PARTIALLY_FILLED,
-        OrderStatus.FILLED,
-        OrderStatus.UNCERTAIN,
-    },
     OrderStatus.CANCELED: set(),  # Terminal
     OrderStatus.REJECTED: set(),  # Terminal
-    OrderStatus.EXPIRED: set(),  # Terminal
-    OrderStatus.UNCERTAIN: {
+    OrderStatus.ERROR: {
         OrderStatus.ACCEPTED,
-        OrderStatus.PARTIALLY_FILLED,
+        OrderStatus.PARTIAL_FILLED,
         OrderStatus.FILLED,
         OrderStatus.CANCELED,
         OrderStatus.REJECTED,
         OrderStatus.EXPIRED,
     },
+    OrderStatus.SUSPENDED: {
+        OrderStatus.ACCEPTED,
+        OrderStatus.CANCELED,
+    },
+    OrderStatus.EXPIRED: set(),  # Terminal
 }
 
 ORDER_TERMINAL_STATES: set[OrderStatus] = {

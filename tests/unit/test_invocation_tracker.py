@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from hqmts.agent.gateway import ToolCallRequest, ToolCallResult
 from hqmts.agent.invocation_tracker import create_invocation_from_result
 from hqmts.core.enums import AgentRole, Environment, PolicyCheckResult, SideEffectLevel
+from hqmts.core.types import now_shanghai
 
 
 class TestSideEffectLevelTracking:
@@ -24,7 +23,7 @@ class TestSideEffectLevelTracking:
             status="success",
             side_effect_level=SideEffectLevel.READ_ONLY,
         )
-        inv = create_invocation_from_result(req, result, datetime.now())
+        inv = create_invocation_from_result(req, result, now_shanghai())
         assert inv.side_effect_level == SideEffectLevel.READ_ONLY
         assert not inv.has_side_effects
 
@@ -43,7 +42,7 @@ class TestSideEffectLevelTracking:
             status="success",
             side_effect_level=SideEffectLevel.TASK_TRIGGER,
         )
-        inv = create_invocation_from_result(req, result, datetime.now())
+        inv = create_invocation_from_result(req, result, now_shanghai())
         assert inv.side_effect_level == SideEffectLevel.TASK_TRIGGER
         assert inv.has_side_effects
 
@@ -62,7 +61,7 @@ class TestSideEffectLevelTracking:
             status="pending_approval",
             side_effect_level=SideEffectLevel.CONTROLLED_OPERATION,
         )
-        inv = create_invocation_from_result(req, result, datetime.now())
+        inv = create_invocation_from_result(req, result, now_shanghai())
         assert inv.side_effect_level == SideEffectLevel.CONTROLLED_OPERATION
         assert inv.has_side_effects
 
@@ -81,13 +80,13 @@ class TestSideEffectLevelTracking:
             side_effect_level=SideEffectLevel.TASK_TRIGGER,
             error="role_not_allowed",
         )
-        inv = create_invocation_from_result(req, result, datetime.now())
+        inv = create_invocation_from_result(req, result, now_shanghai())
         assert inv.side_effect_level == SideEffectLevel.TASK_TRIGGER
         assert inv.status == "denied"
 
     def test_invocation_has_duration(self):
         """Invocation calculates duration from started_at/finished_at."""
-        started = datetime(2024, 1, 2, 10, 0, 0)
+        started = now_shanghai()
         req = ToolCallRequest(
             agent_role=AgentRole.MONITORING,
             agent_task_id="task-005",
@@ -119,7 +118,7 @@ class TestSideEffectLevelTracking:
             status="success",
             side_effect_level=SideEffectLevel.READ_ONLY,
         )
-        inv = create_invocation_from_result(req, result, datetime.now())
+        inv = create_invocation_from_result(req, result, now_shanghai())
         assert inv.environment == "paper"
 
     def test_invocation_captures_idempotency_key(self):
@@ -137,5 +136,5 @@ class TestSideEffectLevelTracking:
             status="success",
             side_effect_level=SideEffectLevel.TASK_TRIGGER,
         )
-        inv = create_invocation_from_result(req, result, datetime.now())
+        inv = create_invocation_from_result(req, result, now_shanghai())
         assert inv.idempotency_key == "idem-007"

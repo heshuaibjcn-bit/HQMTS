@@ -24,7 +24,7 @@ class ControlledExecutionORM(Base, TimestampMixin):
     action_type: Mapped[str] = mapped_column(String(32), nullable=False)
     target_object_type: Mapped[str] = mapped_column(String(32), nullable=False)
     target_object_id: Mapped[str] = mapped_column(String(64), nullable=False)
-    execution_status: Mapped[str] = mapped_column(String(16), default="pending")
+    execution_status: Mapped[str] = mapped_column(String(16), default="pending", comment="pending|executing|completed|failed|expired")
     executed_by_service: Mapped[str] = mapped_column(String(64), default="")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

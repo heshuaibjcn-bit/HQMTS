@@ -7,7 +7,7 @@ Using SQLite async session to test the full pipeline.
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ from hqmts.statemachine.order_fsm import order_fsm
 
 
 class TestOrderLifecycle:
-    """Full order lifecycle: create -> submit -> accept -> partial fill -> fill."""
+    """Full order lifecycle: created -> pending_submit -> submit -> accept -> partial fill -> fill."""
 
     @pytest.mark.asyncio
     async def test_order_create_and_repo_roundtrip(self, session: AsyncSession):
@@ -67,28 +67,29 @@ class TestOrderLifecycle:
         )
         await repo.create(order)
 
-        # CREATED -> SUBMITTING
-        new_status = order_fsm.transition(OrderStatus.CREATED, OrderStatus.SUBMITTING)
-        assert new_status == OrderStatus.SUBMITTING
+        # CREATED -> PENDING_SUBMIT
+        new_status = order_fsm.transition(OrderStatus.CREATED, OrderStatus.PENDING_SUBMIT)
+        assert new_status == OrderStatus.PENDING_SUBMIT
+        order.status = new_status.value
+
+        # PENDING_SUBMIT -> SUBMITTED
+        new_status = order_fsm.transition(OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED)
+        assert new_status == OrderStatus.SUBMITTED
         order.status = new_status.value
         await repo.update(order)
-
-        # SUBMITTING -> SUBMITTED
-        new_status = order_fsm.transition(OrderStatus.SUBMITTING, OrderStatus.SUBMITTED)
-        order.status = new_status.value
 
         # SUBMITTED -> ACCEPTED
         new_status = order_fsm.transition(OrderStatus.SUBMITTED, OrderStatus.ACCEPTED)
         order.status = new_status.value
 
-        # ACCEPTED -> PARTIALLY_FILLED
-        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.PARTIALLY_FILLED)
+        # ACCEPTED -> PARTIAL_FILLED
+        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.PARTIAL_FILLED)
         order.status = new_status.value
         order.filled_quantity = 50
         order.avg_fill_price = Decimal("1799.50")
 
-        # PARTIALLY_FILLED -> FILLED
-        new_status = order_fsm.transition(OrderStatus.PARTIALLY_FILLED, OrderStatus.FILLED)
+        # PARTIAL_FILLED -> FILLED
+        new_status = order_fsm.transition(OrderStatus.PARTIAL_FILLED, OrderStatus.FILLED)
         order.status = new_status.value
         order.filled_quantity = 100
         order.avg_fill_price = Decimal("1800.00")
@@ -123,10 +124,12 @@ class TestOrderLifecycle:
         )
         await repo.create(order)
 
-        # CREATED -> SUBMITTING -> SUBMITTED -> REJECTED
-        for target in [OrderStatus.SUBMITTING, OrderStatus.SUBMITTED]:
-            new_status = order_fsm.transition(OrderStatus(order.status), target)
-            order.status = new_status.value
+        # CREATED -> PENDING_SUBMIT -> SUBMITTED -> REJECTED
+        new_status = order_fsm.transition(OrderStatus(order.status), OrderStatus.PENDING_SUBMIT)
+        order.status = new_status.value
+
+        new_status = order_fsm.transition(OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED)
+        order.status = new_status.value
 
         new_status = order_fsm.transition(OrderStatus.SUBMITTED, OrderStatus.REJECTED)
         order.status = new_status.value
@@ -159,15 +162,12 @@ class TestOrderLifecycle:
         )
         await repo.create(order)
 
-        # CREATED -> SUBMITTING -> SUBMITTED -> ACCEPTED -> CANCEL_PENDING -> CANCELED
-        for target in [OrderStatus.SUBMITTING, OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]:
+        # CREATED -> PENDING_SUBMIT -> SUBMITTED -> ACCEPTED -> CANCELED
+        for target in [OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]:
             new_status = order_fsm.transition(OrderStatus(order.status), target)
             order.status = new_status.value
 
-        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.CANCEL_PENDING)
-        order.status = new_status.value
-
-        new_status = order_fsm.transition(OrderStatus.CANCEL_PENDING, OrderStatus.CANCELED)
+        new_status = order_fsm.transition(OrderStatus.ACCEPTED, OrderStatus.CANCELED)
         order.status = new_status.value
 
         await repo.update(order)

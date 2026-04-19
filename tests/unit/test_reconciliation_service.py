@@ -27,7 +27,7 @@ class TestReconcileOrders:
         local = [{"order_id": "o1", "broker_order_id": "b1", "status": "pending", "filled_quantity": 0}]
         broker = [{"broker_order_id": "b1", "status": "filled", "filled_quantity": 100}]
         result = await service.reconcile_orders("acc-001", local, broker)
-        assert result.status == ReconciliationStatus.MISMATCH_DETECTED
+        assert result.status == ReconciliationStatus.MISMATCHED
         assert any(d.field_name == "status" for d in result.diffs)
 
     @pytest.mark.asyncio

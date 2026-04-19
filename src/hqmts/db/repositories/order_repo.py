@@ -26,12 +26,12 @@ class OrderRepository(BaseRepository[OrderORM]):
         """Get all non-terminal orders for an account."""
         active_statuses = [
             OrderStatus.CREATED.value,
-            OrderStatus.SUBMITTING.value,
+            OrderStatus.PENDING_SUBMIT.value,
             OrderStatus.SUBMITTED.value,
             OrderStatus.ACCEPTED.value,
-            OrderStatus.PARTIALLY_FILLED.value,
-            OrderStatus.CANCEL_PENDING.value,
-            OrderStatus.UNCERTAIN.value,
+            OrderStatus.PARTIAL_FILLED.value,
+            OrderStatus.SUSPENDED.value,
+            OrderStatus.ERROR.value,
         ]
         stmt = (
             select(OrderORM)
@@ -62,10 +62,12 @@ class OrderRepository(BaseRepository[OrderORM]):
         """Check if there are conflicting in-flight orders for the same instrument/side."""
         active_statuses = [
             OrderStatus.CREATED.value,
-            OrderStatus.SUBMITTING.value,
+            OrderStatus.PENDING_SUBMIT.value,
             OrderStatus.SUBMITTED.value,
             OrderStatus.ACCEPTED.value,
-            OrderStatus.PARTIALLY_FILLED.value,
+            OrderStatus.PARTIAL_FILLED.value,
+            OrderStatus.SUSPENDED.value,
+            OrderStatus.ERROR.value,
         ]
         stmt = (
             select(OrderORM)

@@ -3,30 +3,70 @@
 Records all agent lifecycle events: task creation, policy evaluation,
 proposal submission, approval decisions, tool invocations, and
 controlled execution outcomes.
+
+Events are persisted to the audit repository on creation.
 """
 
 from __future__ import annotations
 
+import logging
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING
 
 from hqmts.core.enums import AlertLevel, Environment
 from hqmts.core.types import AuditEventId
 from hqmts.domain.audit import AuditEvent
+from hqmts.core.types import now_shanghai
+
+if TYPE_CHECKING:
+    from hqmts.db.repositories.base import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class AgentAuditService:
     """Tracks all agent actions as immutable audit events.
 
-    Each method creates an AuditEvent recording what the agent did,
-    why, and what the outcome was. Events are returned (not persisted)
-    so callers can store them through the audit repository.
+    Each method creates an AuditEvent, persists it to the audit repository,
+    and returns it. Events are never deleted or modified (append-only).
     """
 
-    def __init__(self, environment: Environment = Environment.BACKTEST) -> None:
+    def __init__(
+        self,
+        environment: Environment = Environment.BACKTEST,
+        audit_repo: BaseRepository | None = None,
+    ) -> None:
         self._environment = environment
+        self._audit_repo = audit_repo
 
-    def record_task_created(
+    async def _persist(self, event: AuditEvent) -> AuditEvent:
+        """Persist audit event to repository if available."""
+        if self._audit_repo is not None:
+            try:
+                from hqmts.db.models.audit import AuditEventORM
+                orm = AuditEventORM(
+                    audit_event_id=event.audit_event_id,
+                    event_type=event.event_type,
+                    entity_type=event.entity_type,
+                    entity_id=event.entity_id,
+                    environment=event.environment.value,
+                    actor=event.actor,
+                    action=event.action,
+                    details_json=str(event.details),
+                    alert_level=event.alert_level.value,
+                    correlation_id=event.correlation_id,
+                    timestamp=event.timestamp,
+                )
+                await self._audit_repo.create(orm)
+            except Exception as exc:
+                logger.warning(
+                    "AUDIT_PERSIST_FAILED event=%s type=%s error=%s",
+                    event.audit_event_id, event.event_type, exc,
+                )
+        return event
+
+    async def record_task_created(
         self,
         task_id: str,
         agent_role: str,
@@ -34,7 +74,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record agent task creation."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_task_created",
             entity_type="agent_task",
@@ -44,10 +84,11 @@ class AgentAuditService:
             action="create_task",
             details={"description": description},
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_policy_evaluation(
+    async def record_policy_evaluation(
         self,
         task_id: str,
         agent_role: str,
@@ -56,7 +97,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record policy engine evaluation for an agent action."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_policy_evaluation",
             entity_type="agent_task",
@@ -69,12 +110,13 @@ class AgentAuditService:
                 "policy_result": policy_result,
                 "violations": violations or [],
             },
-            alert_level=AlertLevel.P3 if policy_result == "denied" else AlertLevel.P3,
+            alert_level=AlertLevel.P2 if policy_result == "denied" else AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_proposal_submitted(
+    async def record_proposal_submitted(
         self,
         proposal_id: str,
         task_id: str,
@@ -83,7 +125,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record agent proposal submission."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_proposal_submitted",
             entity_type="agent_proposal",
@@ -96,10 +138,11 @@ class AgentAuditService:
                 "proposal_type": proposal_type,
             },
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_approval_decision(
+    async def record_approval_decision(
         self,
         proposal_id: str,
         approver: str,
@@ -108,7 +151,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record approval or rejection of an agent proposal."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_approval_decision",
             entity_type="agent_proposal",
@@ -119,10 +162,11 @@ class AgentAuditService:
             details={"decision": decision, "reason": reason},
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_tool_invocation(
+    async def record_tool_invocation(
         self,
         task_id: str,
         agent_role: str,
@@ -132,7 +176,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record agent tool invocation through the gateway."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_tool_invocation",
             entity_type="agent_task",
@@ -147,10 +191,11 @@ class AgentAuditService:
             },
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_controlled_execution(
+    async def record_controlled_execution(
         self,
         execution_id: str,
         proposal_id: str,
@@ -160,7 +205,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record controlled execution outcome."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_controlled_execution",
             entity_type="controlled_execution",
@@ -171,10 +216,11 @@ class AgentAuditService:
             details=details or {"proposal_id": proposal_id, "outcome": outcome},
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_unauthorized_attempt(
+    async def record_unauthorized_attempt(
         self,
         agent_role: str,
         action: str,
@@ -182,7 +228,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record an unauthorized access attempt by an agent."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_unauthorized_attempt",
             entity_type="agent_security",
@@ -193,10 +239,11 @@ class AgentAuditService:
             details={"reason": reason},
             alert_level=AlertLevel.P1,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)
 
-    def record_task_state_change(
+    async def record_task_state_change(
         self,
         task_id: str,
         agent_role: str,
@@ -206,7 +253,7 @@ class AgentAuditService:
         correlation_id: str | None = None,
     ) -> AuditEvent:
         """Record agent task state transition."""
-        return AuditEvent(
+        event = AuditEvent(
             audit_event_id=AuditEventId(str(uuid.uuid4())),
             event_type="agent_task_state_change",
             entity_type="agent_task",
@@ -217,5 +264,6 @@ class AgentAuditService:
             details={"from_state": from_state, "to_state": to_state, "reason": reason},
             alert_level=AlertLevel.P3,
             correlation_id=correlation_id,
-            timestamp=datetime.now(),
+            timestamp=now_shanghai(),
         )
+        return await self._persist(event)

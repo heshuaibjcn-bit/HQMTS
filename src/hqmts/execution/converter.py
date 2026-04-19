@@ -38,6 +38,7 @@ from hqmts.domain.risk import RiskCheckResult
 from hqmts.domain.signal import Signal
 from hqmts.risk.engine import RiskContext, RiskEngine
 from hqmts.risk.final_check import FinalPreSubmitCheck, FinalCheckContext
+from hqmts.core.types import now_shanghai
 
 
 class SignalConverter:
@@ -86,7 +87,7 @@ class SignalConverter:
         risk_check_id: str | None = None,
     ) -> ExecutionIntent:
         """Create an ExecutionIntent from a validated signal."""
-        side = self._determine_side(signal)
+        side = self.determine_side(signal)
         return ExecutionIntent(
             execution_intent_id=ExecutionIntentId(str(uuid.uuid4())),
             signal_id=signal.signal_id,
@@ -98,7 +99,7 @@ class SignalConverter:
             reference_price=reference_price,
             reservation_id=reservation_id,  # type: ignore
             risk_check_id=risk_check_id,
-            created_at=datetime.now(),
+            created_at=now_shanghai(),
         )
 
     async def convert_to_order_request(
@@ -108,7 +109,7 @@ class SignalConverter:
         tif: TIF = TIF.GTC,
     ) -> OrderRequest:
         """Convert ExecutionIntent to OrderRequest after Final Pre-Submit Check."""
-        now = datetime.now()
+        now = now_shanghai()
         return OrderRequest(
             order_request_id=OrderRequestId(str(uuid.uuid4())),
             signal_id=intent.signal_id,
@@ -128,7 +129,8 @@ class SignalConverter:
             reservation_id=intent.reservation_id,
         )
 
-    def _determine_side(self, signal: Signal) -> Side:
+    @staticmethod
+    def determine_side(signal: Signal) -> Side:
         """Map signal type to order side."""
         side_map = {
             SignalType.OPEN_LONG: Side.BUY,

@@ -6,6 +6,7 @@ Outputs: pass, fail, manual_review_required.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 
 from hqmts.core.enums import (
@@ -16,6 +17,8 @@ from hqmts.core.enums import (
     ToolCategory,
 )
 from hqmts.agent.types import ALL_TOOLS, FORBIDDEN_TOOLS, ToolDefinition
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -97,6 +100,22 @@ class PolicyEngine:
                 f"for tool:{input_data.tool_name}"
             )
 
+        # Check 3: Target object state (controlled operations require valid target)
+        if tool_def.category == ToolCategory.CONTROLLED_OPERATION:
+            if input_data.target_object_type and not input_data.target_object_id:
+                violations.append(
+                    "target_object_id_required_for_controlled_operation"
+                )
+
+        # Check 6: Risk boundary violation (Live controlled operations)
+        if (
+            input_data.environment == Environment.LIVE
+            and tool_def.category == ToolCategory.CONTROLLED_OPERATION
+            and input_data.proposal_type in ("close_only", "kill_switch")
+            and not input_data.has_version_binding
+        ):
+            violations.append("risk_boundary_violation_no_binding")
+
         # Check 10: Live-specific restrictions
         if input_data.environment == Environment.LIVE:
             if self._global_kill_switch and tool_def.category != ToolCategory.READ_ONLY:
@@ -147,8 +166,18 @@ class PolicyEngine:
         )
 
     def set_kill_switch(self, active: bool) -> None:
-        """Set global kill switch state."""
+        """Set global kill switch state. Logs P0 alert on activation."""
+        if active and not self._global_kill_switch:
+            logger.warning(
+                "KILL_SWITCH_ACTIVATED — all non-read agent operations blocked until deactivated",
+            )
+        elif not active and self._global_kill_switch:
+            logger.info("KILL_SWITCH_DEACTIVATED — agent operations restored")
         self._global_kill_switch = active
+
+    def is_kill_switch_active(self) -> bool:
+        """Check if global kill switch is active."""
+        return self._global_kill_switch
 
     def set_live_trading_allowed(self, allowed: bool) -> None:
         """Set whether live trading is allowed."""

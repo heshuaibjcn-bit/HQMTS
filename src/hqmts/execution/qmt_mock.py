@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 
+from hqmts.core.types import now_shanghai
+
 
 @dataclass
 class AccountSnapshot:
@@ -74,7 +76,7 @@ class _MockOrder:
     filled_quantity: int = 0
     filled_price: Decimal = Decimal("0")
     status: str = "pending"
-    submit_time: datetime = field(default_factory=datetime.now)
+    submit_time: datetime = field(default_factory=now_shanghai)
 
 
 class MockQMTAdapter:

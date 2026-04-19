@@ -81,37 +81,47 @@ class TargetDirection(str, Enum):
 
 
 class OrderStatus(str, Enum):
-    """Order lifecycle states (SAD 15.1)."""
+    """Order lifecycle states (SAD 15.1, PRD 9.6).
+
+    Flow: created → pending_submit → submitted → accepted →
+          partial_filled → filled / canceled / rejected / expired / error / suspended
+    """
 
     CREATED = "created"
-    SUBMITTING = "submitting"
+    PENDING_SUBMIT = "pending_submit"
     SUBMITTED = "submitted"
     ACCEPTED = "accepted"
-    PARTIALLY_FILLED = "partially_filled"
+    PARTIAL_FILLED = "partial_filled"
     FILLED = "filled"
-    CANCEL_PENDING = "cancel_pending"
     CANCELED = "canceled"
     REJECTED = "rejected"
+    ERROR = "error"
+    SUSPENDED = "suspended"
     EXPIRED = "expired"
-    UNCERTAIN = "uncertain"
 
 
 # ── Strategy Status ──────────────────────────────────────────────────────────
 
 
 class StrategyStatus(str, Enum):
-    """Strategy instance lifecycle states (SAD 15.3)."""
+    """Strategy instance lifecycle states (SAD 15.3, PRD FR-STR-005).
+
+    Flow: draft → backtest_ready → validation_ready → paper_running → live_running
+          → pause_open / close_only / paused / frozen / stopped
+          Any state can transition to archived.
+    """
 
     DRAFT = "draft"
-    APPROVED = "approved"
+    BACKTEST_READY = "backtest_ready"
+    VALIDATION_READY = "validation_ready"
     PAPER_RUNNING = "paper_running"
-    LIVE_PREPARING = "live_preparing"
-    PAUSE_OPEN = "pause_open"
     LIVE_RUNNING = "live_running"
+    PAUSE_OPEN = "pause_open"
     CLOSE_ONLY = "close_only"
     STOPPED = "stopped"
-    FAILED = "failed"
-    RECOVERING = "recovering"
+    PAUSED = "paused"
+    FROZEN = "frozen"
+    ARCHIVED = "archived"
 
 
 # ── Reconciliation Status ────────────────────────────────────────────────────
@@ -120,13 +130,15 @@ class StrategyStatus(str, Enum):
 class ReconciliationStatus(str, Enum):
     """Reconciliation session states (SAD 15.4)."""
 
-    PENDING = "pending"
-    RUNNING = "running"
+    INITIALIZED = "initialized"
+    COMPARING = "comparing"
     MATCHED = "matched"
-    MISMATCH_DETECTED = "mismatch_detected"
-    CORRECTED = "corrected"
+    MISMATCHED = "mismatched"
+    ADJUSTING = "adjusting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
     ESCALATED = "escalated"
-    CLOSED = "closed"
 
 
 # ── Recovery Status ──────────────────────────────────────────────────────────
@@ -136,13 +148,12 @@ class RecoveryStatus(str, Enum):
     """Recovery session states (SAD 15.5)."""
 
     CREATED = "created"
-    LOADING_STATE = "loading_state"
-    RECONCILING = "reconciling"
-    REBUILDING_CONTEXT = "rebuilding_context"
-    PENDING_CONFIRMATION = "pending_confirmation"
+    DIAGNOSING = "diagnosing"
+    RECOVERING = "recovering"
+    VERIFYING = "verifying"
     COMPLETED = "completed"
-    ABORTED = "aborted"
-    ESCALATED = "escalated"
+    FAILED = "failed"
+    CANCELED = "canceled"
 
 
 # ── Risk ─────────────────────────────────────────────────────────────────────
@@ -238,10 +249,107 @@ class ExecutionStatus(str, Enum):
     """Controlled execution states (SAD 7.10)."""
 
     PENDING = "pending"
+    EXECUTING = "executing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+
+class ResearchProjectStatus(str, Enum):
+    """Research project lifecycle states."""
+
+    CREATED = "created"
+    EXPLORING = "exploring"
+    HYPOTHESIZING = "hypothesizing"
+    DESIGNING = "designing"
+    EXECUTING = "executing"
+    VALIDATING = "validating"
+    REPORTING = "reporting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class ResearchMode(str, Enum):
+    """Research project execution mode."""
+
+    HUMAN_DRIVEN = "human_driven"
+    AI_AUTONOMOUS = "ai_autonomous"
+    COLLABORATIVE = "collaborative"
+
+
+class AutonomyLevel(str, Enum):
+    """Autonomous research cycle autonomy levels (SAD 24.10)."""
+
+    LEVEL_1 = "level_1"  # Agent suggests, human decides
+    LEVEL_2 = "level_2"  # Agent decides, human approves checkpoints (default)
+    LEVEL_3 = "level_3"  # Agent autonomous, human notified
+
+
+class ResearchCycleStatus(str, Enum):
+    """Research cycle lifecycle states (SAD 7.11, 15)."""
+
+    OPPORTUNITY_IDENTIFIED = "opportunity_identified"
+    RESEARCHING = "researching"
+    FACTOR_VALIDATED = "factor_validated"
+    SYNTHESIZING = "synthesizing"
+    BACKTESTING = "backtesting"
+    EVALUATING = "evaluating"
+    PROMOTED = "promoted"
+    ARCHIVED = "archived"
+    RE_RESEARCH = "re_research"
+    CANCELED = "canceled"
+    FAILED = "failed"
+
+
+class CycleOutcome(str, Enum):
+    """Research cycle terminal outcomes."""
+
+    PROMOTED = "promoted"
+    ARCHIVED_NO_ALPHA = "archived_no_alpha"
+    ARCHIVED_BUDGET_EXHAUSTED = "archived_budget_exhausted"
+    ARCHIVED_FAILED_GOVERNANCE = "archived_failed_governance"
+    RE_RESEARCH_TRIGGERED = "re_research_triggered"
+
+
+class FactorDiscoveryStatus(str, Enum):
+    """Factor discovery lifecycle states (SAD 7.12)."""
+
+    CANDIDATE = "candidate"
+    VALIDATED = "validated"
+    REGISTERED = "registered"
+    EXPIRED = "expired"
+
+
+class StrategyCandidateStatus(str, Enum):
+    """Strategy candidate lifecycle states (SAD 7.13)."""
+
+    GENERATED = "generated"
+    BACKTESTING = "backtesting"
+    EVALUATED = "evaluated"
+    PROMOTED = "promoted"
+    REJECTED = "rejected"
+
+
+class HypothesisStatus(str, Enum):
+    """Hypothesis lifecycle states."""
+
+    DRAFT = "draft"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    TESTING = "testing"
+    VALIDATED = "validated"
+    REFUTED = "refuted"
+
+
+class TrialPlanStatus(str, Enum):
+    """Trial plan lifecycle states."""
+
+    PLANNED = "planned"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
-    ESCALATED = "escalated"
+    CANCELED = "canceled"
 
 
 class SideEffectLevel(str, Enum):
@@ -300,6 +408,11 @@ class RejectReason(str, Enum):
     UNKNOWN_REJECT = "unknown_reject"
     UNAUTHORIZED_SOURCE = "unauthorized_source"
     POLICY_BLOCKED = "policy_blocked"
+    KILL_SWITCH = "kill_switch"
+    SIGNAL_EXPIRED = "signal_expired"
+    STRATEGY_NOT_LIVE = "strategy_not_live"
+    MARKET_CLOSED = "market_closed"
+    ORDER_FREQUENCY_EXCEEDED = "order_frequency_exceeded"
 
 
 # ── Data Quality ─────────────────────────────────────────────────────────────
@@ -359,3 +472,96 @@ class PolicyCheckResult(str, Enum):
     PASS = "pass"
     FAIL = "fail"
     MANUAL_REVIEW_REQUIRED = "manual_review_required"
+
+
+# ── Live Startup ─────────────────────────────────────────────────────────────
+
+
+class StartupStepStatus(str, Enum):
+    """Live startup step states (SAD 22.1)."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+# ── Force Flatten ────────────────────────────────────────────────────────────
+
+
+class FlattenTrigger(str, Enum):
+    """Force flatten trigger types (SAD 18.3)."""
+
+    KILL_SWITCH = "kill_switch"
+    MAX_DRAWDOWN = "max_drawdown"
+    MANUAL_COMMAND = "manual_command"
+    RISK_RULE = "risk_rule"
+
+
+# ── Admission ────────────────────────────────────────────────────────────────
+
+
+class AdmissionStatus(str, Enum):
+    """Paper-to-Live admission states (SAD 25)."""
+
+    PENDING_METRICS = "pending_metrics"
+    METRICS_COLLECTED = "metrics_collected"
+    PENDING_REVIEW = "pending_review"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+# ── Correction ───────────────────────────────────────────────────────────────
+
+
+class CorrectionType(str, Enum):
+    """Broker trade correction types (SAD 10.4)."""
+
+    PRICE_CORRECTION = "price_correction"
+    QUANTITY_CORRECTION = "quantity_correction"
+    TRADE_CANCELLATION = "trade_cancellation"
+    COMMISSION_ADJUSTMENT = "commission_adjustment"
+
+
+# ── Sandbox ──────────────────────────────────────────────────────────────────
+
+
+class SandboxViolationType(str, Enum):
+    """Strategy sandbox violation types (SAD 13.2/13.3)."""
+
+    CPU_TIMEOUT = "cpu_timeout"
+    MEMORY_EXCEEDED = "memory_exceeded"
+    NETWORK_BLOCKED = "network_blocked"
+    INSTRUMENT_NOT_WHITELISTED = "instrument_not_whitelisted"
+    OUTSIDE_TRADING_HOURS = "outside_trading_hours"
+
+
+# ── User & Auth (PRD 30.3) ────────────────────────────────────────────────────
+
+
+class UserRole(str, Enum):
+    """User roles for UI permission control (PRD 30.3).
+
+    Permission matrix:
+    - QUANT_RESEARCHER: Research, backtest, factor analysis (RO on trading)
+    - TRADER: Monitor orders, manage strategies, approve proposals
+    - RISK_MANAGER: Kill switch, risk config, force flatten, risk rule viewer
+    - SYSTEM_ADMIN: Full access to all features
+    - AUDITOR: Read-only access to audit trail, compliance, all operations
+    """
+
+    QUANT_RESEARCHER = "quant_researcher"
+    TRADER = "trader"
+    RISK_MANAGER = "risk_manager"
+    SYSTEM_ADMIN = "system_admin"
+    AUDITOR = "auditor"
+
+
+class SessionStatus(str, Enum):
+    """User login session states."""
+
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    REVOKED = "revoked"

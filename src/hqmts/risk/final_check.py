@@ -17,24 +17,25 @@ from hqmts.core.enums import (
     StrategyStatus,
 )
 from hqmts.core.exceptions import KillSwitchActiveError
+from hqmts.core.types import now_shanghai
 
 
 @dataclass
 class FinalCheckContext:
     """All data needed for the Final Pre-Submit Check."""
 
-    # 1. Strategy state
-    strategy_status: StrategyStatus = StrategyStatus.LIVE_RUNNING
+    # 1. Strategy state - must be explicitly set
+    strategy_status: StrategyStatus | None = None
 
     # 2. Signal/Intent expiration
     signal_valid_until: datetime | None = None
     intent_created_at: datetime | None = None
 
-    # 3. QMT Adapter
-    qmt_adapter_available: bool = True
+    # 3. QMT Adapter - must be explicitly confirmed
+    qmt_adapter_available: bool | None = None
 
     # 4. Account state
-    account_risk_status: str = "normal"
+    account_risk_status: str | None = None
     account_available_cash: Decimal = Decimal("0")
 
     # 5. Position
@@ -48,10 +49,10 @@ class FinalCheckContext:
     reservation_expires_at: datetime | None = None
 
     # 7. Conflicting orders
-    has_conflicting_inflight: bool = False
+    has_conflicting_inflight: bool | None = None
 
     # 8. Kill switch / close_only
-    kill_switch_active: bool = False
+    kill_switch_active: bool | None = None
     close_only_mode: bool = False
     pause_open_mode: bool = False
 
@@ -72,7 +73,7 @@ class FinalCheckContext:
 
     # Additional
     is_flatten: bool = False
-    check_time: datetime = field(default_factory=datetime.now)
+    check_time: datetime = field(default_factory=now_shanghai)
     stale_price_threshold_seconds: int = 30
     reference_price_age_seconds: float = 0.0
 
@@ -104,7 +105,9 @@ class FinalPreSubmitCheck:
         failed: list[str] = []
 
         # 1. StrategyInstance status
-        if ctx.strategy_status == StrategyStatus.LIVE_RUNNING or (
+        if ctx.strategy_status is None:
+            failed.append("strategy_status_not_provided")
+        elif ctx.strategy_status == StrategyStatus.LIVE_RUNNING or (
             ctx.strategy_status == StrategyStatus.CLOSE_ONLY and ctx.is_flatten
         ):
             passed.append("strategy_status")
@@ -128,13 +131,17 @@ class FinalPreSubmitCheck:
             passed.append("signal_valid")
 
         # 3. QMT Adapter availability
-        if ctx.qmt_adapter_available:
+        if ctx.qmt_adapter_available is None:
+            failed.append("qmt_status_not_provided")
+        elif ctx.qmt_adapter_available:
             passed.append("qmt_available")
         else:
             failed.append("qmt_unavailable")
 
         # 4. Account status
-        if ctx.account_risk_status == "normal":
+        if ctx.account_risk_status is None:
+            failed.append("account_status_not_provided")
+        elif ctx.account_risk_status == "normal":
             passed.append("account_normal")
         elif ctx.account_risk_status == "warning":
             passed.append("account_warning")
@@ -168,13 +175,17 @@ class FinalPreSubmitCheck:
             failed.append(f"reservation_{ctx.reservation_status.value}")
 
         # 7. No conflicting in-flight orders
-        if not ctx.has_conflicting_inflight:
+        if ctx.has_conflicting_inflight is None:
+            failed.append("inflight_status_not_provided")
+        elif not ctx.has_conflicting_inflight:
             passed.append("no_conflict")
         else:
             failed.append("conflicting_inflight")
 
         # 8. Kill switch / close_only
-        if ctx.kill_switch_active:
+        if ctx.kill_switch_active is None:
+            failed.append("kill_switch_status_not_provided")
+        elif ctx.kill_switch_active:
             if ctx.is_flatten:
                 passed.append("kill_switch_flatten_allowed")
             else:
@@ -195,6 +206,13 @@ class FinalPreSubmitCheck:
             passed.append("params_valid")
         else:
             failed.append("params_invalid")
+
+        # 10b. Price staleness check
+        if ctx.stale_price_threshold_seconds > 0:
+            if ctx.reference_price_age_seconds > ctx.stale_price_threshold_seconds:
+                failed.append("stale_price")
+            else:
+                passed.append("price_fresh")
 
         # 11. Source legitimacy (not from agent)
         if ctx.source_is_deterministic:

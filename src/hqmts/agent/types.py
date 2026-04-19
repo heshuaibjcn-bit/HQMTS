@@ -219,9 +219,178 @@ CONTROLLED_OPERATION_TOOLS: list[ToolDefinition] = [
         allowed_roles=[AgentRole.RECOVERY_COPILOT, AgentRole.ORCHESTRATOR],
         requires_approval=True,
     ),
+    ToolDefinition(
+        name="propose_live_release",
+        category=ToolCategory.CONTROLLED_OPERATION,
+        description="Propose releasing strategy to live_running from pause_open/close_only",
+        side_effect_level=SideEffectLevel.CONTROLLED_OPERATION,
+        allowed_environments=[Environment.LIVE],
+        allowed_roles=[AgentRole.RECOVERY_COPILOT, AgentRole.ORCHESTRATOR],
+        requires_approval=True,
+        idempotent=True,
+    ),
+]
+
+# ── Research Agent Tools (FR-RES-006~013) ─────────────────────────────────────
+
+RESEARCH_ROLES = [AgentRole.RESEARCH, AgentRole.ORCHESTRATOR]
+
+RESEARCH_READ_ONLY_TOOLS: list[ToolDefinition] = [
+    ToolDefinition(
+        name="query_factor_library",
+        category=ToolCategory.READ_ONLY,
+        description="List and search the factor registry",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+    ToolDefinition(
+        name="query_factor_values",
+        category=ToolCategory.READ_ONLY,
+        description="Compute factor values for instruments over a time range",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+    ToolDefinition(
+        name="query_factor_correlations",
+        category=ToolCategory.READ_ONLY,
+        description="Compute correlation matrix between factors",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+    ToolDefinition(
+        name="query_market_regime",
+        category=ToolCategory.READ_ONLY,
+        description="Identify current market regime (trending/mean-reverting/volatile)",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+    ToolDefinition(
+        name="query_factor_anomalies",
+        category=ToolCategory.READ_ONLY,
+        description="Detect factor value anomalies (sudden spikes, extreme values)",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+    ToolDefinition(
+        name="query_instrument_universe",
+        category=ToolCategory.READ_ONLY,
+        description="Query available instruments in the universe",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+]
+
+RESEARCH_TASK_TRIGGER_TOOLS: list[ToolDefinition] = [
+    ToolDefinition(
+        name="create_hypothesis",
+        category=ToolCategory.TASK_TRIGGER,
+        description="Create a structured hypothesis record in a research project",
+        side_effect_level=SideEffectLevel.TASK_TRIGGER,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST],
+        allowed_roles=RESEARCH_ROLES,
+        idempotent=True,
+    ),
+    ToolDefinition(
+        name="create_trial_plan",
+        category=ToolCategory.TASK_TRIGGER,
+        description="Create a pre-registered trial plan for a hypothesis",
+        side_effect_level=SideEffectLevel.TASK_TRIGGER,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST],
+        allowed_roles=RESEARCH_ROLES,
+        idempotent=True,
+    ),
+    ToolDefinition(
+        name="execute_trial",
+        category=ToolCategory.TASK_TRIGGER,
+        description="Execute a trial plan (compute factors and evaluate metrics)",
+        side_effect_level=SideEffectLevel.TASK_TRIGGER,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+    ToolDefinition(
+        name="generate_research_report",
+        category=ToolCategory.TASK_TRIGGER,
+        description="Generate a structured research report with provenance chain",
+        side_effect_level=SideEffectLevel.TASK_TRIGGER,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES + [AgentRole.AUDIT_REPORTING],
+    ),
+]
+
+RESEARCH_CONTROLLED_TOOLS: list[ToolDefinition] = [
+    ToolDefinition(
+        name="propose_factor_registration",
+        category=ToolCategory.CONTROLLED_OPERATION,
+        description="Propose registering a new factor to the library",
+        side_effect_level=SideEffectLevel.CONTROLLED_OPERATION,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST],
+        allowed_roles=RESEARCH_ROLES,
+        requires_approval=True,
+    ),
+]
+
+# ── Autonomous Research Cycle Tools (SAD 24.10.6, FR-RES-014~020, FR-STR-006~012) ─
+
+CYCLE_READ_ONLY_TOOLS: list[ToolDefinition] = [
+    ToolDefinition(
+        name="detect_factor_decay",
+        category=ToolCategory.READ_ONLY,
+        description="Detect decay in registered factors by comparing recent distributions to validation baselines",
+        side_effect_level=SideEffectLevel.READ_ONLY,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+]
+
+CYCLE_TASK_TRIGGER_TOOLS: list[ToolDefinition] = [
+    ToolDefinition(
+        name="synthesize_strategy_candidates",
+        category=ToolCategory.TASK_TRIGGER,
+        description="Generate strategy candidates from validated factor discoveries using template mapping",
+        side_effect_level=SideEffectLevel.TASK_TRIGGER,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST],
+        allowed_roles=RESEARCH_ROLES,
+        idempotent=True,
+    ),
+    ToolDefinition(
+        name="evaluate_strategy_candidate",
+        category=ToolCategory.TASK_TRIGGER,
+        description="Evaluate a backtested strategy candidate with composite scoring",
+        side_effect_level=SideEffectLevel.TASK_TRIGGER,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST],
+        allowed_roles=RESEARCH_ROLES,
+    ),
+]
+
+CYCLE_CONTROLLED_TOOLS: list[ToolDefinition] = [
+    ToolDefinition(
+        name="propose_strategy_promotion",
+        category=ToolCategory.CONTROLLED_OPERATION,
+        description="Propose promoting a strategy candidate to Paper or Live deployment",
+        side_effect_level=SideEffectLevel.CONTROLLED_OPERATION,
+        allowed_environments=[Environment.RESEARCH, Environment.BACKTEST, Environment.PAPER],
+        allowed_roles=RESEARCH_ROLES,
+        requires_approval=True,
+    ),
 ]
 
 ALL_TOOLS: dict[str, ToolDefinition] = {
     t.name: t
-    for t in READ_ONLY_TOOLS + TASK_TRIGGER_TOOLS + CONTROLLED_OPERATION_TOOLS
+    for t in (
+        READ_ONLY_TOOLS
+        + TASK_TRIGGER_TOOLS
+        + CONTROLLED_OPERATION_TOOLS
+        + RESEARCH_READ_ONLY_TOOLS
+        + RESEARCH_TASK_TRIGGER_TOOLS
+        + RESEARCH_CONTROLLED_TOOLS
+        + CYCLE_READ_ONLY_TOOLS
+        + CYCLE_TASK_TRIGGER_TOOLS
+        + CYCLE_CONTROLLED_TOOLS
+    )
 }

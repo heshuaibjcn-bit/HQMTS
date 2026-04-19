@@ -44,6 +44,11 @@ from hqmts.domain.agent_proposal import AgentProposal
 from hqmts.domain.agent_task import AgentTask
 from hqmts.domain.approval_request import ApprovalRequest
 from hqmts.domain.controlled_execution import ControlledExecution
+from hqmts.statemachine.agent_task_fsm import agent_task_fsm
+from hqmts.statemachine.agent_proposal_fsm import agent_proposal_fsm
+from hqmts.statemachine.approval_fsm import approval_fsm
+from hqmts.statemachine.controlled_execution_fsm import controlled_execution_fsm
+from hqmts.core.types import now_shanghai
 
 
 class AgentGovernanceService:
@@ -83,7 +88,7 @@ class AgentGovernanceService:
         correlation_id: str | None = None,
     ) -> AgentTask:
         """Create a new agent task. Returns domain model."""
-        now = datetime.now()
+        now = now_shanghai()
         task = AgentTask(
             agent_task_id=AgentTaskId(str(uuid.uuid4())),
             agent_role=agent_role,
@@ -100,12 +105,14 @@ class AgentGovernanceService:
         return await self._task_repo.create_domain(task)
 
     async def start_task(self, task_id: str) -> AgentTask:
-        """Transition task to running. Returns domain model."""
+        """Transition task: CREATED -> PLANNING -> RUNNING. Returns domain model."""
         task = await self._task_repo.get_domain(task_id)
         if task is None:
             raise ValueError(f"Task {task_id} not found")
-        task.status = AgentTaskStatus.RUNNING
-        task.started_at = datetime.now()
+        # CREATED -> PLANNING -> RUNNING (two-step per FSM)
+        task.status = agent_task_fsm.transition(task.status, AgentTaskStatus.PLANNING)
+        task.status = agent_task_fsm.transition(task.status, AgentTaskStatus.RUNNING)
+        task.started_at = now_shanghai()
         return await self._task_repo.update_domain(task)
 
     # -- Step 2: Create Proposal -------------------------------------------
@@ -135,7 +142,7 @@ class AgentGovernanceService:
                 reason=f"Task {agent_task_id} in status {task.status.value} cannot produce proposals",
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         proposal = AgentProposal(
             proposal_id=ProposalId(str(uuid.uuid4())),
             proposal_type=proposal_type,
@@ -144,8 +151,8 @@ class AgentGovernanceService:
             target_object_id=target_object_id,
             proposal_payload=proposal_payload,
             confidence=confidence,
+            status=ProposalStatus.DRAFTED,
             policy_result="",
-            approval_status="",
             created_at=now,
         )
         return await self._proposal_repo.create_domain(proposal)
@@ -181,11 +188,14 @@ class AgentGovernanceService:
         proposal.policy_result = policy_output.result.value
 
         if policy_output.result == PolicyCheckResult.FAIL:
-            proposal.approval_status = ProposalStatus.POLICY_REJECTED.value
+            target_status = ProposalStatus.POLICY_REJECTED
         elif policy_output.result == PolicyCheckResult.MANUAL_REVIEW_REQUIRED:
-            proposal.approval_status = ProposalStatus.PENDING_APPROVAL.value
+            target_status = ProposalStatus.PENDING_APPROVAL
         else:
-            proposal.approval_status = ProposalStatus.APPROVED.value
+            target_status = ProposalStatus.APPROVED
+        proposal.status = agent_proposal_fsm.transition(
+            ProposalStatus.POLICY_CHECKING, target_status,
+        )
 
         return await self._proposal_repo.update_domain(proposal)
 
@@ -201,7 +211,7 @@ class AgentGovernanceService:
 
         violations: list[str] = []
 
-        if self._policy_engine._global_kill_switch:
+        if self._policy_engine.is_kill_switch_active():
             violations.append("kill_switch_active")
 
         if violations:
@@ -274,7 +284,7 @@ class AgentGovernanceService:
                 f"expected 'manual_review_required'"
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         approval = ApprovalRequest(
             approval_request_id=ApprovalRequestId(str(uuid.uuid4())),
             source_type="agent_proposal",
@@ -311,22 +321,27 @@ class AgentGovernanceService:
                 f"Approval request {approval_request_id} already decided: {approval.decision.value}"
             )
 
-        now = datetime.now()
+        now = now_shanghai()
         approval.approver = approver
-        approval.decision = ApprovalStatus(decision)
+        approval.decision = approval_fsm.transition(
+            approval.decision, ApprovalStatus(decision),
+        )
         approval.decision_reason = reason
         approval.approved_at = now
         approval = await self._approval_repo.update_domain(approval)
 
         # Update linked proposal
         if approval.source_type == "agent_proposal":
-            # Find proposal by approval_request_id
             proposal = await self._proposal_repo.get_domain(approval.source_id)
             if proposal is not None:
                 if decision == ApprovalStatus.APPROVED.value:
-                    proposal.approval_status = ProposalStatus.APPROVED.value
+                    proposal.status = agent_proposal_fsm.transition(
+                        ProposalStatus.PENDING_APPROVAL, ProposalStatus.APPROVED,
+                    )
                 elif decision == ApprovalStatus.REJECTED.value:
-                    proposal.approval_status = ProposalStatus.REJECTED.value
+                    proposal.status = agent_proposal_fsm.transition(
+                        ProposalStatus.PENDING_APPROVAL, ProposalStatus.REJECTED,
+                    )
                 await self._proposal_repo.update_domain(proposal)
 
         return approval
@@ -343,14 +358,20 @@ class AgentGovernanceService:
         if proposal is None:
             raise ValueError(f"Proposal {proposal_id} not found")
 
-        if proposal.approval_status != ProposalStatus.APPROVED.value:
+        if proposal.status != ProposalStatus.APPROVED:
             raise AgentPermissionDeniedError(
                 agent_role="system",
                 tool_name="execute_proposal",
-                reason=f"Proposal {proposal_id} not approved (status: {proposal.approval_status})",
+                reason=f"Proposal {proposal_id} not approved (status: {proposal.status.value})",
             )
 
-        now = datetime.now()
+        # Transition proposal: approved -> execution_pending
+        proposal.status = agent_proposal_fsm.transition(
+            ProposalStatus.APPROVED, ProposalStatus.EXECUTION_PENDING,
+        )
+        await self._proposal_repo.update_domain(proposal)
+
+        now = now_shanghai()
         execution = ControlledExecution(
             controlled_execution_id=ControlledExecutionId(str(uuid.uuid4())),
             source_proposal_id=ProposalId(proposal_id),
@@ -358,7 +379,7 @@ class AgentGovernanceService:
             action_type=proposal.proposal_type,
             target_object_type=proposal.target_object_type,
             target_object_id=proposal.target_object_id,
-            execution_status=ExecutionStatus.PENDING,
+            execution_status=ExecutionStatus.EXECUTING,
             executed_by_service=executed_by_service,
             started_at=now,
         )
@@ -375,14 +396,18 @@ class AgentGovernanceService:
         if execution is None:
             raise ValueError(f"Execution {execution_id} not found")
 
-        now = datetime.now()
+        now = now_shanghai()
         execution.completed_at = now
 
         if failure_reason:
-            execution.execution_status = ExecutionStatus.FAILED
+            execution.execution_status = controlled_execution_fsm.transition(
+                execution.execution_status, ExecutionStatus.FAILED,
+            )
             execution.failure_reason = failure_reason
         else:
-            execution.execution_status = ExecutionStatus.COMPLETED
+            execution.execution_status = controlled_execution_fsm.transition(
+                execution.execution_status, ExecutionStatus.COMPLETED,
+            )
             execution.result_ref = result_ref
 
         return await self._execution_repo.update_domain(execution)
@@ -447,10 +472,17 @@ class AgentGovernanceService:
                 approval_type=f"agent_{proposal_type}",
                 requested_by=f"agent:{agent_role}",
             )
-            await self._complete_task(task.agent_task_id, "waiting_approval")
+            # Transition task to WAITING_TOOL (waiting for approval result)
+            await self._wait_task(task.agent_task_id)
 
             # If approver provided, auto-approve for testing
-            if approver:
+            # Guard: auto-approve only allowed in non-Live environments.
+            # SECURITY NOTE: The `approver` parameter is a plain string with no
+            # identity verification. This is acceptable for testing/internal use
+            # in paper/research environments. Before production use, validate the
+            # approver identity against an actual identity service or require a
+            # cryptographic token.
+            if approver and environment != Environment.LIVE.value:
                 approval = await self.process_approval_decision(
                     approval_request_id=approval.approval_request_id,
                     approver=approver,
@@ -471,10 +503,27 @@ class AgentGovernanceService:
     async def _complete_task(
         self, task_id: str, reason: str = ""
     ) -> None:
-        """Mark task as completed."""
+        """Mark task as completed or failed based on reason."""
         task = await self._task_repo.get_domain(task_id)
         if task is not None:
-            now = datetime.now()
-            task.status = AgentTaskStatus.COMPLETED
+            now = now_shanghai()
+            if reason in ("policy_rejected",):
+                target = AgentTaskStatus.FAILED
+            else:
+                target = AgentTaskStatus.COMPLETED
+            # If waiting, resume to running first
+            if task.status == AgentTaskStatus.WAITING_TOOL:
+                task.status = agent_task_fsm.transition(
+                    task.status, AgentTaskStatus.RUNNING,
+                )
+            task.status = agent_task_fsm.transition(task.status, target)
             task.completed_at = now
+            task.failure_reason = reason if target == AgentTaskStatus.FAILED else ""
+            await self._task_repo.update_domain(task)
+
+    async def _wait_task(self, task_id: str) -> None:
+        """Transition task from RUNNING to WAITING_TOOL."""
+        task = await self._task_repo.get_domain(task_id)
+        if task is not None:
+            task.status = agent_task_fsm.transition(task.status, AgentTaskStatus.WAITING_TOOL)
             await self._task_repo.update_domain(task)

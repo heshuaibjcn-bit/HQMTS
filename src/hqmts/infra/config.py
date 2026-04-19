@@ -83,6 +83,20 @@ class AgentConfig(BaseSettings):
     live_fail_closed: bool = True
 
 
+class AuthConfig(BaseSettings):
+    secret_key: str = "change-me-in-production"
+    access_token_expire_minutes: int = 15
+    refresh_token_expire_days: int = 7
+    max_sessions: int = 3
+
+
+class LLMConfig(BaseSettings):
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5:7b"
+
+
 class AppConfig(BaseSettings):
     name: str = "HQMTS"
     version: str = "0.1.0"
@@ -100,6 +114,8 @@ class Settings(BaseSettings):
     tushare: TushareConfig = TushareConfig()
     backtest: BacktestSettings = BacktestSettings()
     agent: AgentConfig = AgentConfig()
+    auth: AuthConfig = AuthConfig()
+    llm: LLMConfig = LLMConfig()
 
 
 def _load_yaml(path: Path) -> dict:

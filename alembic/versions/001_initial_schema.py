@@ -24,10 +24,10 @@ def upgrade() -> None:
         sa.Column('market_value', sa.Numeric(precision=18, scale=4), nullable=False),
         sa.Column('pnl_intraday', sa.Numeric(precision=18, scale=4), nullable=False),
         sa.Column('drawdown_intraday', sa.Numeric(precision=18, scale=4), nullable=False),
+        sa.Column('currency', sa.String(8), nullable=False),
         sa.Column('risk_status', sa.String(16), nullable=False),
-        sa.Column('last_update_time', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
     )
 
     op.create_table('agent_proposals',
@@ -40,7 +40,7 @@ def upgrade() -> None:
         sa.Column('confidence', sa.Float(), nullable=False),
         sa.Column('policy_result', sa.String(24), nullable=False),
         sa.Column('policy_check_id', sa.String(64)),
-        sa.Column('approval_status', sa.String(20), nullable=False),
+        sa.Column('status', sa.String(24), nullable=False, server_default='drafted'),
         sa.Column('approval_request_id', sa.String(64)),
         sa.Column('executed_result', sa.Text(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
@@ -48,7 +48,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_ap_target", "agent_proposals", ['target_object_type', 'target_object_id'], unique=False)
     op.create_index("ix_ap_dedup", "agent_proposals", ['source_agent_task_id', 'proposal_type', 'target_object_id'], unique=True)
-    op.create_index("ix_ap_task_status", "agent_proposals", ['source_agent_task_id', 'approval_status'], unique=False)
+    op.create_index("ix_ap_task_status", "agent_proposals", ['source_agent_task_id', 'status'], unique=False)
 
     op.create_table('agent_tasks',
         sa.Column('agent_task_id', sa.String(64)),
@@ -247,6 +247,12 @@ def upgrade() -> None:
         sa.Column('lot_size', sa.Integer(), nullable=False),
         sa.Column('upper_limit_rule', sa.String(16), nullable=False),
         sa.Column('lower_limit_rule', sa.String(16), nullable=False),
+        sa.Column('sector', sa.String(32), nullable=False),
+        sa.Column('industry', sa.String(32), nullable=False),
+        sa.Column('listing_date', sa.DateTime(timezone=True)),
+        sa.Column('delist_date', sa.DateTime(timezone=True)),
+        sa.Column('is_index', sa.Boolean(), nullable=False),
+        sa.Column('constituent_of', sa.Text(), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
     )
@@ -280,6 +286,10 @@ def upgrade() -> None:
         sa.Column('side', sa.String(8), nullable=False),
         sa.Column('price', sa.Numeric(precision=12, scale=4), nullable=False),
         sa.Column('quantity', sa.Integer(), nullable=False),
+        sa.Column('order_type', sa.String(16), nullable=False),
+        sa.Column('signal_id', sa.String(64)),
+        sa.Column('execution_intent_id', sa.String(64)),
+        sa.Column('action_id', sa.String(64)),
         sa.Column('status', sa.String(20), nullable=False),
         sa.Column('submitted_time', sa.DateTime(timezone=True)),
         sa.Column('updated_time', sa.DateTime(timezone=True)),
@@ -302,9 +312,11 @@ def upgrade() -> None:
         sa.Column('frozen_quantity', sa.Integer(), nullable=False),
         sa.Column('cost_price', sa.Numeric(precision=12, scale=4), nullable=False),
         sa.Column('market_value', sa.Numeric(precision=18, scale=4), nullable=False),
-        sa.Column('last_update_time', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('market_price', sa.Numeric(precision=12, scale=4), nullable=False),
+        sa.Column('realized_pnl', sa.Numeric(precision=18, scale=4), nullable=False),
+        sa.Column('strategy_instance_id', sa.String(64), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
-        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
     )
     op.create_index("ix_positions_account_instrument", "positions", ['account_id', 'instrument_id'], unique=True)
 
@@ -429,11 +441,12 @@ def upgrade() -> None:
         sa.Column('trade_id', sa.String(64)),
         sa.Column('order_id', sa.String(64), nullable=False),
         sa.Column('instrument_id', sa.String(32), nullable=False),
-        sa.Column('trade_time', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('traded_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('trade_price', sa.Numeric(precision=12, scale=4), nullable=False),
         sa.Column('trade_quantity', sa.Integer(), nullable=False),
         sa.Column('commission', sa.Numeric(precision=12, scale=4), nullable=False),
-        sa.Column('tax', sa.Numeric(precision=12, scale=4), nullable=False),
+        sa.Column('stamp_tax', sa.Numeric(precision=12, scale=4), nullable=False),
+        sa.Column('slippage', sa.Numeric(precision=12, scale=4), nullable=False),
         sa.Column('broker_trade_id', sa.String(64)),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),

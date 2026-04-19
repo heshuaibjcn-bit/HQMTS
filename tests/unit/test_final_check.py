@@ -9,6 +9,7 @@ from hqmts.core.enums import (
     ReservationStatus,
     StrategyStatus,
 )
+from hqmts.core.types import now_shanghai
 from hqmts.risk.final_check import FinalCheckContext, FinalPreSubmitCheck
 
 
@@ -21,14 +22,14 @@ def check():
 def passing_context():
     return FinalCheckContext(
         strategy_status=StrategyStatus.LIVE_RUNNING,
-        signal_valid_until=datetime.now() + timedelta(minutes=5),
+        signal_valid_until=now_shanghai() + timedelta(minutes=5),
         qmt_adapter_available=True,
         account_risk_status="normal",
         available_quantity=1000,
         required_quantity=100,
         side="buy",
         reservation_status=ReservationStatus.ACTIVE,
-        reservation_expires_at=datetime.now() + timedelta(minutes=2),
+        reservation_expires_at=now_shanghai() + timedelta(minutes=2),
         has_conflicting_inflight=False,
         kill_switch_active=False,
         close_only_mode=False,
@@ -66,7 +67,7 @@ class TestFinalPreSubmitCheck:
 
     @pytest.mark.asyncio
     async def test_expired_signal_rejected(self, check, passing_context):
-        passing_context.signal_valid_until = datetime.now() - timedelta(minutes=1)
+        passing_context.signal_valid_until = now_shanghai() - timedelta(minutes=1)
         result = await check.execute(passing_context)
         assert result.result == FinalCheckResult.REJECT
         assert "signal_expired" in result.failed_checks
@@ -94,7 +95,7 @@ class TestFinalPreSubmitCheck:
 
     @pytest.mark.asyncio
     async def test_expired_reservation_rejected(self, check, passing_context):
-        passing_context.reservation_expires_at = datetime.now() - timedelta(minutes=1)
+        passing_context.reservation_expires_at = now_shanghai() - timedelta(minutes=1)
         result = await check.execute(passing_context)
         assert result.result == FinalCheckResult.REJECT
         assert "reservation_expired" in result.failed_checks
@@ -168,3 +169,22 @@ class TestFinalPreSubmitCheck:
         passing_context.quantity = 250
         result = await check.execute(passing_context)
         assert "position_insufficient" in result.failed_checks
+
+    @pytest.mark.asyncio
+    async def test_stale_price_rejected(self, check, passing_context):
+        """Price older than threshold is flagged as stale (escalates to manual)."""
+        passing_context.stale_price_threshold_seconds = 30
+        passing_context.reference_price_age_seconds = 45.0
+        result = await check.execute(passing_context)
+        assert "stale_price" in result.failed_checks
+        # stale_price is not a critical failure, so it escalates to manual
+        assert result.result == FinalCheckResult.ESCALATE_MANUAL
+
+    @pytest.mark.asyncio
+    async def test_fresh_price_passes(self, check, passing_context):
+        """Price within threshold passes."""
+        passing_context.stale_price_threshold_seconds = 30
+        passing_context.reference_price_age_seconds = 10.0
+        result = await check.execute(passing_context)
+        assert "price_fresh" in result.passed_checks
+        assert result.result == FinalCheckResult.ALLOW
