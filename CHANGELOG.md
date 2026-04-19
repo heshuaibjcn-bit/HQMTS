@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0.1] - 2026-04-19
+
+### Added
+- **Factor research module** (frontend + backend) for alpha factor discovery and backtesting
+- **Research cycle pages** (hypothesis, trial plan, research project management)
+- **Knowledge base pages** (strategy docs, chat history)
+- **Trading pages** (strategy instances, risk control with live health monitoring)
+- **Validation page** with Paper-to-Live admission workflow (create, evaluate, approve/reject)
+- **Lifecycle CTA buttons** ("Submit for Validation" in strategies table, "Launch Paper Instance" placeholder in validation)
+- **Shared components** (lifecycle breadcrumb, sidebar section, error states)
+- **Frontend tests** for validation, risk-control, and orders pages (25 new test cases)
+
+### Changed
+- **Validation page error handling**: added `isError` branch with retry, `mutateAsync` try/catch, user null guard, double-click protection
+- **Strategy instances table**: added `isError` branch, fixed `started_at` null crash, added `instrument_codes` null safety
+- **Strategies table**: added `isError` branch with retry, added "Submit for Validation" CTA with eligibility gating
+- **Risk control page**: wrapped health/alerts section in ErrorBoundary
+
+### Fixed
+- Browser-tested bugs: WS auth crash, NaN currency formatting, page crashes
+- Login form accessibility and UX (ISSUE-005, ISSUE-006)
+- Page title and lang attribute
+
 ## [1.5.0.0] - 2026-04-18
 
 ### Added
