@@ -22,6 +22,18 @@ class TrialRecord:
     is_significant: bool
     notes: str = ""
 
+    def to_dict(self) -> dict:
+        return {
+            "trial_id": self.trial_id,
+            "factor_name": self.factor_name,
+            "strategy_name": self.strategy_name,
+            "metric_name": self.metric_name,
+            "metric_value": self.metric_value,
+            "threshold": self.threshold,
+            "is_significant": self.is_significant,
+            "notes": self.notes,
+        }
+
 
 @dataclass
 class GovernanceStats:
@@ -32,6 +44,15 @@ class GovernanceStats:
     rejected_count: int = 0
     family_wise_error_rate: float = 0.0
     false_discovery_rate: float = 0.0
+
+    def to_dict(self) -> dict:
+        return {
+            "total_trials": self.total_trials,
+            "significant_count": self.significant_count,
+            "rejected_count": self.rejected_count,
+            "family_wise_error_rate": round(self.family_wise_error_rate, 4),
+            "false_discovery_rate": round(self.false_discovery_rate, 4),
+        }
 
 
 class MultipleTestingGovernance:

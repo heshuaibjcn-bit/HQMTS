@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hqmts.api.deps import get_db
@@ -22,12 +25,22 @@ def _strategy_to_dict(s: StrategyORM) -> dict:
     }
 
 
-def _instance_to_dict(i: StrategyInstanceORM) -> dict:
+def _instance_to_dict(i: StrategyInstanceORM, strategy_name: str = "") -> dict:
+    instruments = []
+    try:
+        instruments = json.loads(i.instruments_json) if i.instruments_json else []
+    except (json.JSONDecodeError, TypeError):
+        instruments = []
     return {
+        "instance_id": i.strategy_instance_id,
         "strategy_instance_id": i.strategy_instance_id,
         "strategy_id": i.strategy_id,
+        "strategy_name": strategy_name,
         "status": i.status,
         "environment": i.environment,
+        "instrument_codes": instruments,
+        "started_at": i.created_at.isoformat() if i.created_at else None,
+        "pnl": 0,
         "created_at": i.created_at.isoformat() if i.created_at else None,
     }
 
@@ -70,4 +83,11 @@ async def list_strategy_instances(
     if environment:
         filters["environment"] = environment
     instances = await repo.get_many(filters=filters, limit=100)
-    return {"instances": [_instance_to_dict(i) for i in instances]}
+
+    # Look up strategy name
+    strat_stmt = select(StrategyORM).where(StrategyORM.strategy_id == strategy_id)
+    strat_result = await db.execute(strat_stmt)
+    strat = strat_result.scalar_one_or_none()
+    strategy_name = strat.name if strat else strategy_id
+
+    return {"instances": [_instance_to_dict(i, strategy_name) for i in instances]}

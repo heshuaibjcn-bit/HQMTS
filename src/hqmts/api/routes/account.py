@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from hqmts.api.deps import get_db
 from hqmts.api.deps_auth import get_current_user
 from hqmts.db.models.account import AccountORM
+from hqmts.db.models.instrument import InstrumentORM
 from hqmts.db.models.position import PositionORM
 from hqmts.db.models.strategy import StrategyInstanceORM
 
@@ -66,3 +67,44 @@ async def get_account_summary(
         "active_strategies": active_strategies,
         "risk_status": account.risk_status,
     }
+
+
+@router.get("/positions")
+async def get_positions(
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> list[dict]:
+    """Get all positions with instrument info."""
+    stmt = select(PositionORM)
+    result = await db.execute(stmt)
+    positions = result.scalars().all()
+
+    out = []
+    for pos in positions:
+        # Look up instrument info
+        inst_stmt = select(InstrumentORM).where(InstrumentORM.instrument_id == pos.instrument_id)
+        inst_result = await db.execute(inst_stmt)
+        inst = inst_result.scalar_one_or_none()
+
+        cost = float(pos.cost_price)
+        market = float(pos.market_price)
+        cost_basis = cost * pos.total_quantity
+        market_val = market * pos.total_quantity
+        unrealized = market_val - cost_basis
+        unrealized_pct = (unrealized / cost_basis) if cost_basis > 0 else 0
+
+        out.append({
+            "position_id": f"pos_{pos.id}",
+            "instrument_code": inst.symbol if inst else pos.instrument_id,
+            "instrument_name": inst.name if inst else "",
+            "direction": "long",
+            "quantity": pos.total_quantity,
+            "available_quantity": pos.available_quantity,
+            "avg_cost": cost,
+            "market_value": float(pos.market_value),
+            "unrealized_pnl": unrealized,
+            "unrealized_pnl_pct": unrealized_pct,
+            "is_t1": False,
+            "updated_at": pos.updated_at.isoformat() if pos.updated_at else "",
+        })
+    return out

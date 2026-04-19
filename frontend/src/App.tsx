@@ -6,16 +6,29 @@ import { ToastContainer } from '@/components/ui/toast'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { LoginPage } from '@/pages/login'
 import { AppShell } from '@/components/layout/app-shell'
-import { OverviewPage } from '@/pages/overview'
-import { PositionsPage } from '@/pages/positions'
-import { OrdersPage } from '@/pages/orders'
-import { RiskPage } from '@/pages/risk'
-import { StrategiesPage } from '@/pages/strategies'
-import { ChatPage } from '@/pages/chat'
-import { SignalsPage } from '@/pages/signals'
-import { BacktestPage } from '@/pages/backtest'
-import { AuditPage } from '@/pages/audit'
-import { MonitoringPage } from '@/pages/monitoring'
+
+// Trading pages
+import { TradingOverviewPage } from '@/pages/trading/trading-overview'
+import { PositionsPage } from '@/pages/trading/positions'
+import { OrdersPage } from '@/pages/trading/orders'
+import { SignalsPage } from '@/pages/trading/signals'
+import { StrategyInstancesPage } from '@/pages/trading/strategy-instances'
+import { AuditPage } from '@/pages/trading/audit-trail'
+
+// Research pages
+import { StrategyDevPage } from '@/pages/research/strategy-dev'
+import BacktestCenterPage from '@/pages/research/backtest-center'
+import { FactorResearchPage } from '@/pages/research/factor-research'
+import { ValidationPage } from '@/pages/research/validation'
+import { OptimizationPage } from '@/pages/research/optimization'
+
+// Knowledge pages
+import { ChatPage } from '@/pages/knowledge/chat'
+import { StrategyDocsPage } from '@/pages/knowledge/strategy-docs'
+import { AuditReportsPage } from '@/pages/knowledge/audit-reports'
+
+// Risk page (merged with monitoring)
+import { RiskControlPage } from '@/pages/trading/risk-control'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated)
@@ -32,8 +45,6 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
   const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    // Wait for Zustand persist to hydrate from localStorage.
-    // useAuthStore.persist.onFinishHydration fires once after rehydration.
     const unsub = useAuthStore.persist.onFinishHydration(() => {
       const token = useAuthStore.getState().token
       if (token) {
@@ -42,8 +53,6 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
       setHydrated(true)
     })
 
-    // Edge case: hydration may have already finished before we subscribed.
-    // If so, hydrate immediately.
     if (useAuthStore.persist.hasHydrated()) {
       const token = useAuthStore.getState().token
       if (token) {
@@ -55,7 +64,6 @@ function AuthInitializer({ children }: { children: React.ReactNode }) {
     return () => unsub()
   }, [])
 
-  // Don't render routes until hydration completes to avoid login page flash
   if (!hydrated) {
     return null
   }
@@ -76,16 +84,40 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<OverviewPage />} />
-            <Route path="positions" element={<PositionsPage />} />
-            <Route path="orders" element={<OrdersPage />} />
-            <Route path="risk" element={<RiskPage />} />
-            <Route path="strategies" element={<StrategiesPage />} />
-            <Route path="signals" element={<SignalsPage />} />
-            <Route path="backtest" element={<BacktestPage />} />
-            <Route path="audit" element={<AuditPage />} />
-            <Route path="monitoring" element={<MonitoringPage />} />
-            <Route path="chat" element={<ChatPage />} />
+            {/* Default */}
+            <Route index element={<Navigate to="/trading/overview" replace />} />
+
+            {/* 策略研究 */}
+            <Route path="research/factors" element={<FactorResearchPage />} />
+            <Route path="research/strategies" element={<StrategyDevPage />} />
+            <Route path="research/backtest" element={<BacktestCenterPage />} />
+            <Route path="research/validation" element={<ValidationPage />} />
+            <Route path="research/optimization" element={<OptimizationPage />} />
+
+            {/* 策略交易 */}
+            <Route path="trading/overview" element={<TradingOverviewPage />} />
+            <Route path="trading/positions" element={<PositionsPage />} />
+            <Route path="trading/orders" element={<OrdersPage />} />
+            <Route path="trading/signals" element={<SignalsPage />} />
+            <Route path="trading/risk" element={<RiskControlPage />} />
+            <Route path="trading/instances" element={<StrategyInstancesPage />} />
+            <Route path="trading/audit" element={<AuditPage />} />
+
+            {/* 量化知识库 */}
+            <Route path="knowledge/chat" element={<ChatPage />} />
+            <Route path="knowledge/docs" element={<StrategyDocsPage />} />
+            <Route path="knowledge/reports" element={<AuditReportsPage />} />
+
+            {/* Legacy redirects */}
+            <Route path="positions" element={<Navigate to="/trading/positions" replace />} />
+            <Route path="orders" element={<Navigate to="/trading/orders" replace />} />
+            <Route path="signals" element={<Navigate to="/trading/signals" replace />} />
+            <Route path="risk" element={<Navigate to="/trading/risk" replace />} />
+            <Route path="strategies" element={<Navigate to="/research/strategies" replace />} />
+            <Route path="backtest" element={<Navigate to="/research/backtest" replace />} />
+            <Route path="audit" element={<Navigate to="/trading/audit" replace />} />
+            <Route path="monitoring" element={<Navigate to="/trading/risk" replace />} />
+            <Route path="chat" element={<Navigate to="/knowledge/chat" replace />} />
           </Route>
         </Routes>
         <ToastContainer />

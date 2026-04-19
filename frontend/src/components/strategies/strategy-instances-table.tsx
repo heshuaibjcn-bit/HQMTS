@@ -7,6 +7,7 @@ import {
 import { useStrategyInstances, type StrategyInstance } from '@/hooks/use-strategies'
 import { StrategyStatusBadge } from './strategy-status-badge'
 import { formatCurrency } from '@/lib/utils'
+import { AlertCircle, RefreshCw } from 'lucide-react'
 
 const columns: ColumnDef<StrategyInstance>[] = [
   {
@@ -16,7 +17,7 @@ const columns: ColumnDef<StrategyInstance>[] = [
   {
     accessorKey: 'instrument_codes',
     header: '标的',
-    cell: ({ getValue }) => (getValue() as string[]).join(', '),
+    cell: ({ getValue }) => (getValue() as string[] | undefined)?.join(', ') ?? '--',
   },
   {
     accessorKey: 'status',
@@ -38,12 +39,12 @@ const columns: ColumnDef<StrategyInstance>[] = [
   {
     accessorKey: 'started_at',
     header: '启动时间',
-    cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString('zh-CN'),
+    cell: ({ getValue }) => getValue() ? new Date(getValue() as string).toLocaleDateString('zh-CN') : '--',
   },
 ]
 
 export function StrategyInstancesTable() {
-  const { data, isLoading } = useStrategyInstances()
+  const { data, isLoading, isError, refetch } = useStrategyInstances()
 
   const table = useReactTable({
     data: data ?? [],
@@ -53,6 +54,22 @@ export function StrategyInstancesTable() {
 
   if (isLoading) {
     return <div className="py-8 text-center text-sm text-[var(--color-text-muted)]">加载中...</div>
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center gap-3 py-8">
+        <AlertCircle className="h-8 w-8 text-[var(--color-danger)]" />
+        <p className="text-sm text-[var(--color-danger)]">加载策略实例失败</p>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-1 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-sm text-white hover:opacity-90"
+        >
+          <RefreshCw className="h-3 w-3" />
+          重试
+        </button>
+      </div>
+    )
   }
 
   return (

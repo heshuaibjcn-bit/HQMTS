@@ -15,7 +15,7 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:8000',
       '/ws': {
-        target: 'ws://localhost:8000',
+        target: 'http://localhost:8000',
         ws: true,
       },
       '/health': 'http://localhost:8000',
@@ -36,7 +36,13 @@ export default defineConfig({
         },
       },
       '/instruments': 'http://localhost:8000',
-      '/validation': 'http://localhost:8000',
+      '/validation': {
+        target: 'http://localhost:8000',
+        bypass(req) {
+          const accept = req.headers?.accept
+          if (accept && accept.includes('text/html')) return '/index.html'
+        },
+      },
       // These paths collide with SPA routes. Only proxy XHR/fetch requests,
       // not browser page navigations. Vite passes (req, res, options) to bypass.
       '/orders': {
@@ -74,6 +80,7 @@ export default defineConfig({
           if (accept && accept.includes('text/html')) return '/index.html'
         },
       },
+      '/factor-research': 'http://localhost:8000',
     },
   },
 })

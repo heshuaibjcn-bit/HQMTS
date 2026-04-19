@@ -53,7 +53,7 @@ class TestGetByBrokerOrderId:
 class TestGetActiveOrdersByAccount:
     @pytest.mark.asyncio
     async def test_returns_only_active_orders(self, session):
-        session.add(OrderORM(order_id="ord-001", account_id="acc-1", instrument_id="600000.SH", side="buy", price=Decimal("10"), quantity=100, status="pending"))
+        session.add(OrderORM(order_id="ord-001", account_id="acc-1", instrument_id="600000.SH", side="buy", price=Decimal("10"), quantity=100, status="created"))
         session.add(OrderORM(order_id="ord-002", account_id="acc-1", instrument_id="000001.SZ", side="sell", price=Decimal("20"), quantity=200, status="filled"))
         await session.flush()
         repo = OrderRepository(session)
@@ -76,14 +76,14 @@ class TestGetByInstrument:
 class TestHasConflictingInflightOrders:
     @pytest.mark.asyncio
     async def test_detects_conflict(self, session):
-        session.add(OrderORM(order_id="ord-001", account_id="acc-1", instrument_id="600000.SH", side="buy", price=Decimal("10"), quantity=100, status="pending"))
+        session.add(OrderORM(order_id="ord-001", account_id="acc-1", instrument_id="600000.SH", side="buy", price=Decimal("10"), quantity=100, status="created"))
         await session.flush()
         repo = OrderRepository(session)
         assert await repo.has_conflicting_inflight_orders("acc-1", "600000.SH", "buy") is True
 
     @pytest.mark.asyncio
     async def test_no_conflict_for_different_side(self, session):
-        session.add(OrderORM(order_id="ord-001", account_id="acc-1", instrument_id="600000.SH", side="buy", price=Decimal("10"), quantity=100, status="pending"))
+        session.add(OrderORM(order_id="ord-001", account_id="acc-1", instrument_id="600000.SH", side="buy", price=Decimal("10"), quantity=100, status="created"))
         await session.flush()
         repo = OrderRepository(session)
         assert await repo.has_conflicting_inflight_orders("acc-1", "600000.SH", "sell") is False

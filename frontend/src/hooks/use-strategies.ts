@@ -23,13 +23,27 @@ export interface StrategyInstance {
 export function useStrategies() {
   return useQuery({
     queryKey: ['strategies'],
-    queryFn: () => apiClient.get<Strategy[]>('/strategies'),
+    queryFn: async () => {
+      const result = await apiClient.get<{ strategies: Strategy[]; total: number }>('/strategies')
+      return result.strategies ?? []
+    },
   })
 }
 
 export function useStrategyInstances() {
   return useQuery({
     queryKey: ['strategies', 'instances'],
-    queryFn: () => apiClient.get<StrategyInstance[]>('/strategies/instances'),
+    queryFn: async () => {
+      // Fetch all instances across strategies
+      const strats = await apiClient.get<{ strategies: { strategy_id: string }[]; total: number }>('/strategies')
+      const all: StrategyInstance[] = []
+      for (const s of strats.strategies ?? []) {
+        try {
+          const res = await apiClient.get<{ instances: StrategyInstance[] }>(`/strategies/${s.strategy_id}/instances`)
+          all.push(...(res.instances ?? []))
+        } catch { /* skip */ }
+      }
+      return all
+    },
   })
 }

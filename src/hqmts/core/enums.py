@@ -81,9 +81,14 @@ class TargetDirection(str, Enum):
 
 
 class OrderStatus(str, Enum):
-    """Order lifecycle states (SAD 15.1)."""
+    """Order lifecycle states (SAD 15.1, PRD 9.6).
 
-    PENDING = "pending"
+    Flow: created → pending_submit → submitted → accepted →
+          partial_filled → filled / canceled / rejected / expired / error / suspended
+    """
+
+    CREATED = "created"
+    PENDING_SUBMIT = "pending_submit"
     SUBMITTED = "submitted"
     ACCEPTED = "accepted"
     PARTIAL_FILLED = "partial_filled"
@@ -99,7 +104,12 @@ class OrderStatus(str, Enum):
 
 
 class StrategyStatus(str, Enum):
-    """Strategy instance lifecycle states (SAD 15.3)."""
+    """Strategy instance lifecycle states (SAD 15.3, PRD FR-STR-005).
+
+    Flow: draft → backtest_ready → validation_ready → paper_running → live_running
+          → pause_open / close_only / paused / frozen / stopped
+          Any state can transition to archived.
+    """
 
     DRAFT = "draft"
     BACKTEST_READY = "backtest_ready"
@@ -110,6 +120,7 @@ class StrategyStatus(str, Enum):
     CLOSE_ONLY = "close_only"
     STOPPED = "stopped"
     PAUSED = "paused"
+    FROZEN = "frozen"
     ARCHIVED = "archived"
 
 
@@ -242,6 +253,103 @@ class ExecutionStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     EXPIRED = "expired"
+
+
+class ResearchProjectStatus(str, Enum):
+    """Research project lifecycle states."""
+
+    CREATED = "created"
+    EXPLORING = "exploring"
+    HYPOTHESIZING = "hypothesizing"
+    DESIGNING = "designing"
+    EXECUTING = "executing"
+    VALIDATING = "validating"
+    REPORTING = "reporting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
+
+
+class ResearchMode(str, Enum):
+    """Research project execution mode."""
+
+    HUMAN_DRIVEN = "human_driven"
+    AI_AUTONOMOUS = "ai_autonomous"
+    COLLABORATIVE = "collaborative"
+
+
+class AutonomyLevel(str, Enum):
+    """Autonomous research cycle autonomy levels (SAD 24.10)."""
+
+    LEVEL_1 = "level_1"  # Agent suggests, human decides
+    LEVEL_2 = "level_2"  # Agent decides, human approves checkpoints (default)
+    LEVEL_3 = "level_3"  # Agent autonomous, human notified
+
+
+class ResearchCycleStatus(str, Enum):
+    """Research cycle lifecycle states (SAD 7.11, 15)."""
+
+    OPPORTUNITY_IDENTIFIED = "opportunity_identified"
+    RESEARCHING = "researching"
+    FACTOR_VALIDATED = "factor_validated"
+    SYNTHESIZING = "synthesizing"
+    BACKTESTING = "backtesting"
+    EVALUATING = "evaluating"
+    PROMOTED = "promoted"
+    ARCHIVED = "archived"
+    RE_RESEARCH = "re_research"
+    CANCELED = "canceled"
+    FAILED = "failed"
+
+
+class CycleOutcome(str, Enum):
+    """Research cycle terminal outcomes."""
+
+    PROMOTED = "promoted"
+    ARCHIVED_NO_ALPHA = "archived_no_alpha"
+    ARCHIVED_BUDGET_EXHAUSTED = "archived_budget_exhausted"
+    ARCHIVED_FAILED_GOVERNANCE = "archived_failed_governance"
+    RE_RESEARCH_TRIGGERED = "re_research_triggered"
+
+
+class FactorDiscoveryStatus(str, Enum):
+    """Factor discovery lifecycle states (SAD 7.12)."""
+
+    CANDIDATE = "candidate"
+    VALIDATED = "validated"
+    REGISTERED = "registered"
+    EXPIRED = "expired"
+
+
+class StrategyCandidateStatus(str, Enum):
+    """Strategy candidate lifecycle states (SAD 7.13)."""
+
+    GENERATED = "generated"
+    BACKTESTING = "backtesting"
+    EVALUATED = "evaluated"
+    PROMOTED = "promoted"
+    REJECTED = "rejected"
+
+
+class HypothesisStatus(str, Enum):
+    """Hypothesis lifecycle states."""
+
+    DRAFT = "draft"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    TESTING = "testing"
+    VALIDATED = "validated"
+    REFUTED = "refuted"
+
+
+class TrialPlanStatus(str, Enum):
+    """Trial plan lifecycle states."""
+
+    PLANNED = "planned"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class SideEffectLevel(str, Enum):
@@ -434,11 +542,21 @@ class SandboxViolationType(str, Enum):
 
 
 class UserRole(str, Enum):
-    """User roles for UI permission control (PRD 30.3)."""
+    """User roles for UI permission control (PRD 30.3).
+
+    Permission matrix:
+    - QUANT_RESEARCHER: Research, backtest, factor analysis (RO on trading)
+    - TRADER: Monitor orders, manage strategies, approve proposals
+    - RISK_MANAGER: Kill switch, risk config, force flatten, risk rule viewer
+    - SYSTEM_ADMIN: Full access to all features
+    - AUDITOR: Read-only access to audit trail, compliance, all operations
+    """
 
     QUANT_RESEARCHER = "quant_researcher"
     TRADER = "trader"
+    RISK_MANAGER = "risk_manager"
     SYSTEM_ADMIN = "system_admin"
+    AUDITOR = "auditor"
 
 
 class SessionStatus(str, Enum):

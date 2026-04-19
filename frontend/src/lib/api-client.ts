@@ -96,6 +96,13 @@ class ApiClient {
   delete<T>(path: string) {
     return this.request<T>(path, { method: 'DELETE' })
   }
+
+  patch<T>(path: string, body?: unknown) {
+    return this.request<T>(path, {
+      method: 'PATCH',
+      body: body ? JSON.stringify(body) : undefined,
+    })
+  }
 }
 
 // Must import store inline to avoid circular dependency

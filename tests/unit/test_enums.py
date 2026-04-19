@@ -34,7 +34,7 @@ class TestCycle:
 class TestOrderStatus:
     def test_all_states(self):
         expected = {
-            "pending", "submitted", "accepted",
+            "created", "pending_submit", "submitted", "accepted",
             "partial_filled", "filled",
             "canceled", "rejected", "error", "suspended", "expired",
         }

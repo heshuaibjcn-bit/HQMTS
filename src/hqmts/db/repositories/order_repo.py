@@ -25,7 +25,8 @@ class OrderRepository(BaseRepository[OrderORM]):
     async def get_active_orders_by_account(self, account_id: str) -> list[OrderORM]:
         """Get all non-terminal orders for an account."""
         active_statuses = [
-            OrderStatus.PENDING.value,
+            OrderStatus.CREATED.value,
+            OrderStatus.PENDING_SUBMIT.value,
             OrderStatus.SUBMITTED.value,
             OrderStatus.ACCEPTED.value,
             OrderStatus.PARTIAL_FILLED.value,
@@ -60,7 +61,8 @@ class OrderRepository(BaseRepository[OrderORM]):
     ) -> bool:
         """Check if there are conflicting in-flight orders for the same instrument/side."""
         active_statuses = [
-            OrderStatus.PENDING.value,
+            OrderStatus.CREATED.value,
+            OrderStatus.PENDING_SUBMIT.value,
             OrderStatus.SUBMITTED.value,
             OrderStatus.ACCEPTED.value,
             OrderStatus.PARTIAL_FILLED.value,

@@ -33,8 +33,10 @@ export function useChatSessions() {
 export function useChatMessages(sessionId: string) {
   return useQuery({
     queryKey: ['chat', 'sessions', sessionId, 'messages'],
-    queryFn: () =>
-      apiClient.get<ChatMessage[]>(`/chat/sessions/${sessionId}/messages`),
+    queryFn: async () => {
+      const result = await apiClient.get<{ messages: ChatMessage[]; total: number }>(`/chat/sessions/${sessionId}/messages`)
+      return result.messages ?? []
+    },
     enabled: !!sessionId,
   })
 }

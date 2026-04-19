@@ -24,8 +24,10 @@ export interface OrderFilters {
 export function useOrders(filters?: OrderFilters) {
   return useQuery({
     queryKey: ['orders', filters],
-    queryFn: () =>
-      apiClient.get<Order[]>('/orders', filters as Record<string, string>),
+    queryFn: async () => {
+      const result = await apiClient.get<{ orders: Order[] }>('/orders', filters as Record<string, string>)
+      return result.orders ?? []
+    },
   })
 }
 
@@ -33,7 +35,7 @@ export function useCancelOrder() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (orderId: string) =>
-      apiClient.delete(`/orders/${orderId}`),
+      apiClient.post(`/orders/${orderId}/cancel`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] })
     },

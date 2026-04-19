@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import jwt
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +12,61 @@ from hqmts.api.deps import get_db
 from hqmts.core.enums import UserRole
 from hqmts.db.models.user import UserORM
 from hqmts.db.repositories.user_repo import UserRepository
+
+# ── Permission matrix (PRD 30.3) ─────────────────────────────────────────────
+# Maps (feature_area, action) -> set of roles allowed.
+# Actions: "read", "write", "cancel", "full"
+
+PERMISSION_MATRIX: dict[str, dict[str, set[UserRole]]] = {
+    "overview": {"read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR}},
+    "positions": {"read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR}},
+    "orders": {
+        "read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+        "cancel": {UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN},
+    },
+    "risk": {
+        "read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+        "kill_switch": {UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN},
+        "config": {UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN},
+        "full": {UserRole.SYSTEM_ADMIN},
+    },
+    "strategies": {
+        "read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+        "create": {UserRole.QUANT_RESEARCHER, UserRole.SYSTEM_ADMIN},
+        "start_stop": {UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN},
+    },
+    "signals": {"read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR}},
+    "backtest": {
+        "read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+        "start": {UserRole.QUANT_RESEARCHER, UserRole.SYSTEM_ADMIN},
+    },
+    "audit": {
+        "read": {UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+        "full": {UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+    },
+    "chat": {
+        "research": {UserRole.QUANT_RESEARCHER, UserRole.SYSTEM_ADMIN},
+        "monitor": {UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN},
+        "full": {UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+    },
+    "approvals": {
+        "approve_reject": {UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN},
+        "read": {UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+    },
+    "factor_research": {
+        "read": {UserRole.QUANT_RESEARCHER, UserRole.TRADER, UserRole.RISK_MANAGER, UserRole.SYSTEM_ADMIN, UserRole.AUDITOR},
+        "write": {UserRole.QUANT_RESEARCHER, UserRole.SYSTEM_ADMIN},
+    },
+}
+
+
+def check_permission(role: UserRole, feature: str, action: str) -> bool:
+    """Check if a role has permission for a feature/action combination."""
+    feature_perms = PERMISSION_MATRIX.get(feature, {})
+    allowed_roles = feature_perms.get(action)
+    if allowed_roles is None:
+        return False
+    return role in allowed_roles
 
 
 async def get_current_user(
@@ -80,6 +137,23 @@ def require_role(*roles: UserRole) -> Callable:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Role '{user.role}' not authorized. Required: {[r.value for r in roles]}",
+            )
+        return user
+
+    return _check
+
+
+def require_permission(feature: str, action: str) -> Callable:
+    """Dependency that checks permission via the role-permission matrix."""
+
+    async def _check(
+        user: UserORM = Depends(get_current_user),
+    ) -> UserORM:
+        role = UserRole(user.role)
+        if not check_permission(role, feature, action):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Role '{role.value}' not authorized for {feature}:{action}",
             )
         return user
 

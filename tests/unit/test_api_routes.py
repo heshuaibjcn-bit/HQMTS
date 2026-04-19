@@ -195,8 +195,8 @@ class TestRiskStatus:
         resp = await risk_client.get("/risk/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert "market" in data
-        assert "account" in data
+        assert "layers" in data
+        assert "kill_switch_active" in data
 
 
 class TestAlertsEndpoint:

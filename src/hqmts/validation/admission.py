@@ -54,6 +54,10 @@ class PaperLiveAdmissionService:
         self._approval_service = approval_service
         self._admissions: dict[str, AdmissionRecord] = {}
 
+    def list_admissions(self) -> list[AdmissionRecord]:
+        """Return all admission records, newest first."""
+        return sorted(self._admissions.values(), key=lambda r: r.created_at, reverse=True)
+
     async def create_admission(
         self,
         strategy_instance_id: str,

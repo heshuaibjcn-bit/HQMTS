@@ -126,7 +126,7 @@ export function OrdersTable() {
                     </td>
                   ))}
                   <td className="px-3 py-2">
-                    {['pending', 'submitted', 'partial'].includes(row.original.status) && (
+                    {['created', 'pending_submit', 'pending', 'submitted', 'accepted', 'partial', 'partial_filled'].includes(row.original.status) && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation()

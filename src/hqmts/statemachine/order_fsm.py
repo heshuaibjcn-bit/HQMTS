@@ -1,6 +1,6 @@
 """Order state machine (SAD 15.1).
 
-States: pending, submitted, accepted, partial_filled, filled,
+States: created, pending_submit, submitted, accepted, partial_filled, filled,
         canceled, rejected, error, suspended, expired
 
 Terminal states: filled, canceled, rejected, expired
@@ -13,7 +13,8 @@ from hqmts.statemachine.base import StateMachine
 
 # Transition table from SAD 15.1
 ORDER_TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
-    OrderStatus.PENDING: {OrderStatus.SUBMITTED, OrderStatus.CANCELED},
+    OrderStatus.CREATED: {OrderStatus.PENDING_SUBMIT, OrderStatus.CANCELED},
+    OrderStatus.PENDING_SUBMIT: {OrderStatus.SUBMITTED, OrderStatus.CANCELED},
     OrderStatus.SUBMITTED: {
         OrderStatus.ACCEPTED,
         OrderStatus.REJECTED,

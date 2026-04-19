@@ -7,7 +7,7 @@ Using SQLite async session to test the full pipeline.
 from __future__ import annotations
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ from hqmts.statemachine.order_fsm import order_fsm
 
 
 class TestOrderLifecycle:
-    """Full order lifecycle: pending -> submit -> accept -> partial fill -> fill."""
+    """Full order lifecycle: created -> pending_submit -> submit -> accept -> partial fill -> fill."""
 
     @pytest.mark.asyncio
     async def test_order_create_and_repo_roundtrip(self, session: AsyncSession):
@@ -33,7 +33,7 @@ class TestOrderLifecycle:
             side="buy",
             price=Decimal("10.50"),
             quantity=1000,
-            status=OrderStatus.PENDING.value,
+            status=OrderStatus.CREATED.value,
             created_at=now,
             updated_at=now,
         )
@@ -61,14 +61,19 @@ class TestOrderLifecycle:
             side="sell",
             price=Decimal("1800.00"),
             quantity=100,
-            status=OrderStatus.PENDING.value,
+            status=OrderStatus.CREATED.value,
             created_at=now,
             updated_at=now,
         )
         await repo.create(order)
 
-        # PENDING -> SUBMITTED
-        new_status = order_fsm.transition(OrderStatus.PENDING, OrderStatus.SUBMITTED)
+        # CREATED -> PENDING_SUBMIT
+        new_status = order_fsm.transition(OrderStatus.CREATED, OrderStatus.PENDING_SUBMIT)
+        assert new_status == OrderStatus.PENDING_SUBMIT
+        order.status = new_status.value
+
+        # PENDING_SUBMIT -> SUBMITTED
+        new_status = order_fsm.transition(OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED)
         assert new_status == OrderStatus.SUBMITTED
         order.status = new_status.value
         await repo.update(order)
@@ -113,14 +118,17 @@ class TestOrderLifecycle:
             side="buy",
             price=Decimal("10.00"),
             quantity=500,
-            status=OrderStatus.PENDING.value,
+            status=OrderStatus.CREATED.value,
             created_at=now,
             updated_at=now,
         )
         await repo.create(order)
 
-        # PENDING -> SUBMITTED -> REJECTED
-        new_status = order_fsm.transition(OrderStatus(order.status), OrderStatus.SUBMITTED)
+        # CREATED -> PENDING_SUBMIT -> SUBMITTED -> REJECTED
+        new_status = order_fsm.transition(OrderStatus(order.status), OrderStatus.PENDING_SUBMIT)
+        order.status = new_status.value
+
+        new_status = order_fsm.transition(OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED)
         order.status = new_status.value
 
         new_status = order_fsm.transition(OrderStatus.SUBMITTED, OrderStatus.REJECTED)
@@ -148,14 +156,14 @@ class TestOrderLifecycle:
             side="buy",
             price=Decimal("200.00"),
             quantity=200,
-            status=OrderStatus.PENDING.value,
+            status=OrderStatus.CREATED.value,
             created_at=now,
             updated_at=now,
         )
         await repo.create(order)
 
-        # PENDING -> SUBMITTED -> ACCEPTED -> CANCELED
-        for target in [OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]:
+        # CREATED -> PENDING_SUBMIT -> SUBMITTED -> ACCEPTED -> CANCELED
+        for target in [OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED, OrderStatus.ACCEPTED]:
             new_status = order_fsm.transition(OrderStatus(order.status), target)
             order.status = new_status.value
 
@@ -170,11 +178,11 @@ class TestOrderLifecycle:
 
     @pytest.mark.asyncio
     async def test_illegal_transition_raises(self):
-        """Cannot jump from PENDING directly to FILLED."""
+        """Cannot jump from CREATED directly to FILLED."""
         from hqmts.core.exceptions import IllegalTransitionError
 
         with pytest.raises(IllegalTransitionError):
-            order_fsm.transition(OrderStatus.PENDING, OrderStatus.FILLED)
+            order_fsm.transition(OrderStatus.CREATED, OrderStatus.FILLED)
 
     @pytest.mark.asyncio
     async def test_get_active_orders_by_account(self, session: AsyncSession):

@@ -52,6 +52,13 @@ def _admission_to_dict(record) -> dict:
     }
 
 
+@router.get("/admissions")
+async def list_admissions() -> dict:
+    """List all admission records."""
+    records = _svc.list_admissions()
+    return {"admissions": [_admission_to_dict(r) for r in records], "total": len(records)}
+
+
 @router.post("/admission")
 async def create_admission(req: CreateAdmissionRequest) -> dict:
     """Create a paper-to-live admission record."""

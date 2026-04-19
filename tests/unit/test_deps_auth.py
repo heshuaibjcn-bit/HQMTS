@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from hqmts.api.deps_auth import get_current_user, require_role
+from hqmts.api.deps_auth import check_permission, get_current_user, require_permission, require_role
 from hqmts.core.auth import create_access_token, create_refresh_token, hash_password
 from hqmts.core.enums import UserRole
 from hqmts.db.base import Base
@@ -212,3 +212,42 @@ class TestRequireRole:
         token = _make_token(role=UserRole.TRADER)
         resp = await deps_client.get("/test/multi-role", headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 200
+
+
+class TestPermissionMatrix:
+    """Tests for the role-permission matrix (PRD 30.3)."""
+
+    def test_all_five_roles_exist(self):
+        assert len(UserRole) == 5
+        assert UserRole.RISK_MANAGER in UserRole
+        assert UserRole.AUDITOR in UserRole
+
+    def test_researcher_can_backtest(self):
+        assert check_permission(UserRole.QUANT_RESEARCHER, "backtest", "start") is True
+
+    def test_researcher_cannot_cancel_orders(self):
+        assert check_permission(UserRole.QUANT_RESEARCHER, "orders", "cancel") is False
+
+    def test_trader_can_cancel_orders(self):
+        assert check_permission(UserRole.TRADER, "orders", "cancel") is True
+
+    def test_risk_manager_can_kill_switch(self):
+        assert check_permission(UserRole.RISK_MANAGER, "risk", "kill_switch") is True
+
+    def test_risk_manager_can_config_risk(self):
+        assert check_permission(UserRole.RISK_MANAGER, "risk", "config") is True
+
+    def test_auditor_can_read_audit(self):
+        assert check_permission(UserRole.AUDITOR, "audit", "read") is True
+
+    def test_auditor_cannot_cancel_orders(self):
+        assert check_permission(UserRole.AUDITOR, "orders", "cancel") is False
+
+    def test_admin_has_full_risk_access(self):
+        assert check_permission(UserRole.SYSTEM_ADMIN, "risk", "full") is True
+
+    def test_unknown_feature_returns_false(self):
+        assert check_permission(UserRole.SYSTEM_ADMIN, "nonexistent", "read") is False
+
+    def test_unknown_action_returns_false(self):
+        assert check_permission(UserRole.SYSTEM_ADMIN, "risk", "nonexistent") is False

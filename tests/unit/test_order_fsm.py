@@ -10,15 +10,22 @@ from hqmts.statemachine.order_fsm import order_fsm
 class TestOrderFSM:
     """Tests based on SAD 15.1 Order state machine."""
 
-    # Basic transitions from PENDING
-    def test_pending_to_submitted(self):
-        assert order_fsm.can_transition(OrderStatus.PENDING, OrderStatus.SUBMITTED)
+    # Basic transitions from CREATED
+    def test_created_to_pending_submit(self):
+        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.PENDING_SUBMIT)
 
-    def test_pending_to_canceled(self):
-        assert order_fsm.can_transition(OrderStatus.PENDING, OrderStatus.CANCELED)
+    def test_created_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.CANCELED)
 
-    def test_pending_cannot_go_to_filled(self):
-        assert not order_fsm.can_transition(OrderStatus.PENDING, OrderStatus.FILLED)
+    def test_created_cannot_go_to_filled(self):
+        assert not order_fsm.can_transition(OrderStatus.CREATED, OrderStatus.FILLED)
+
+    # PENDING_SUBMIT transitions
+    def test_pending_submit_to_submitted(self):
+        assert order_fsm.can_transition(OrderStatus.PENDING_SUBMIT, OrderStatus.SUBMITTED)
+
+    def test_pending_submit_to_canceled(self):
+        assert order_fsm.can_transition(OrderStatus.PENDING_SUBMIT, OrderStatus.CANCELED)
 
     # SUBMITTED transitions
     def test_submitted_to_accepted(self):
@@ -83,22 +90,22 @@ class TestOrderFSM:
     def test_expired_is_terminal(self):
         assert order_fsm.is_terminal(OrderStatus.EXPIRED)
 
-    def test_pending_is_not_terminal(self):
-        assert not order_fsm.is_terminal(OrderStatus.PENDING)
+    def test_created_is_not_terminal(self):
+        assert not order_fsm.is_terminal(OrderStatus.CREATED)
 
     # Illegal transitions
     def test_illegal_transition_raises(self):
         with pytest.raises(IllegalTransitionError):
-            order_fsm.transition(OrderStatus.PENDING, OrderStatus.FILLED)
+            order_fsm.transition(OrderStatus.CREATED, OrderStatus.FILLED)
 
     def test_terminal_transition_raises(self):
         with pytest.raises(TerminalStateError):
-            order_fsm.transition(OrderStatus.FILLED, OrderStatus.PENDING)
+            order_fsm.transition(OrderStatus.FILLED, OrderStatus.CREATED)
 
     # Valid transitions listing
-    def test_valid_transitions_from_pending(self):
-        valid = order_fsm.valid_transitions(OrderStatus.PENDING)
-        assert OrderStatus.SUBMITTED in valid
+    def test_valid_transitions_from_created(self):
+        valid = order_fsm.valid_transitions(OrderStatus.CREATED)
+        assert OrderStatus.PENDING_SUBMIT in valid
         assert OrderStatus.CANCELED in valid
         assert len(valid) == 2
 
@@ -108,12 +115,14 @@ class TestOrderFSM:
 
     def test_all_states_defined(self):
         all_states = order_fsm.get_all_states()
-        assert len(all_states) == 10
+        assert len(all_states) == 11
 
     # Happy paths
     def test_full_happy_path(self):
-        """Test the happy path: pending → submitted → accepted → filled."""
-        state = OrderStatus.PENDING
+        """Test the happy path: created → pending_submit → submitted → accepted → filled."""
+        state = OrderStatus.CREATED
+        state = order_fsm.transition(state, OrderStatus.PENDING_SUBMIT)
+        assert state == OrderStatus.PENDING_SUBMIT
         state = order_fsm.transition(state, OrderStatus.SUBMITTED)
         assert state == OrderStatus.SUBMITTED
         state = order_fsm.transition(state, OrderStatus.ACCEPTED)
@@ -137,8 +146,8 @@ class TestOrderFSM:
         state = order_fsm.transition(state, OrderStatus.FILLED)
         assert order_fsm.is_terminal(state)
 
-    def test_cancel_from_pending(self):
-        """Test pending → canceled."""
-        state = OrderStatus.PENDING
+    def test_cancel_from_created(self):
+        """Test created → canceled."""
+        state = OrderStatus.CREATED
         state = order_fsm.transition(state, OrderStatus.CANCELED)
         assert order_fsm.is_terminal(state)

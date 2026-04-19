@@ -15,6 +15,7 @@ router = APIRouter(prefix="/audit", tags=["audit"])
 
 def _event_to_dict(e) -> dict:
     return {
+        "audit_id": e.audit_event_id,
         "audit_event_id": e.audit_event_id,
         "event_type": e.event_type,
         "entity_type": e.entity_type,
@@ -22,9 +23,11 @@ def _event_to_dict(e) -> dict:
         "environment": e.environment,
         "actor": e.actor,
         "action": e.action,
+        "description": e.action,
         "alert_level": e.alert_level,
         "correlation_id": e.correlation_id,
         "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+        "created_at": e.timestamp.isoformat() if e.timestamp else None,
     }
 
 
@@ -48,7 +51,11 @@ async def list_audit_events(
     elif start_time and end_time:
         events = await repo.get_by_time_range(start_time, end_time)
     else:
-        events = []
+        # Default: return recent events
+        from hqmts.db.models.audit import AuditEventORM
+        from hqmts.db.repositories.base import BaseRepository
+        base_repo = BaseRepository(AuditEventORM, db)
+        events = await base_repo.get_many(limit=limit)
 
     # Apply limit
     events = events[:limit]

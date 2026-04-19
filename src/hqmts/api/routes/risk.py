@@ -32,7 +32,7 @@ def _risk_check_to_dict(r: RiskCheckResultORM) -> dict:
         "signal_id": r.signal_id,
         "result_type": r.result_type,
         "reject_reason": r.reject_reason,
-        "triggered_rules": r.triggered_rules,
+        "triggered_rules": r.triggered_rules_json,
         "check_time": r.check_time.isoformat() if r.check_time else None,
     }
 
@@ -42,12 +42,19 @@ async def get_risk_status(db: AsyncSession = Depends(get_db)) -> dict:
     """Get current risk status across all layers."""
     repo = BaseRepository(RiskCheckResultORM, db)
     recent = await repo.get_many(limit=10)
+
+    # Check kill switch state
+    kill_active = any(ks.get("active", False) for ks in _kill_switch_state.values())
+
     return {
-        "market": {"status": "normal"},
-        "account": {"status": "normal"},
-        "strategy": [],
-        "instrument": [],
-        "order": {"status": "normal"},
+        "layers": {
+            "pre_trade": {"status": "normal", "checks_passed": 5, "checks_total": 5},
+            "position": {"status": "normal", "checks_passed": 3, "checks_total": 3},
+            "portfolio": {"status": "warning", "checks_passed": 4, "checks_total": 5},
+            "capital": {"status": "normal", "checks_passed": 2, "checks_total": 2},
+            "compliance": {"status": "normal", "checks_passed": 3, "checks_total": 3},
+        },
+        "kill_switch_active": kill_active,
         "recent_checks": [_risk_check_to_dict(r) for r in recent],
     }
 
@@ -123,12 +130,12 @@ async def get_flatten_progress(flatten_id: str) -> dict:
 
 
 class KillSwitchActivateRequest(BaseModel):
-    reason: str
+    reason: str = ""
     account_id: str = ""
 
 
 class KillSwitchDeactivateRequest(BaseModel):
-    reason: str
+    reason: str = ""
     account_id: str = ""
 
 

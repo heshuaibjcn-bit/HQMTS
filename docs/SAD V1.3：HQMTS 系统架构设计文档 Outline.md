@@ -857,6 +857,69 @@ side_effect_level：
 2. 不得由 Agent Runtime 直接写核心状态完成执行
 3. 执行结果必须进入 AuditEvent
 
+## 7.11 ResearchCycle
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| research_cycle_id | str(PK) | 循环唯一标识 |
+| title | str | 循环标题 |
+| opportunity_type | str | 触发类型：market_anomaly/regime_change/factor_decay/human_initiated/strategy_degradation |
+| opportunity_signal_json | str(JSON) | 触发信号详情 |
+| status | ResearchCycleStatus | 状态机当前状态 |
+| research_project_id | str(FK) | 关联研究项目 |
+| budget_json | str(JSON) | 预算配置 |
+| budget_consumed_json | str(JSON) | 已消耗预算 |
+| factor_discovery_ids_json | str(JSON array) | 因子发现ID列表 |
+| strategy_candidate_ids_json | str(JSON array) | 策略候选ID列表 |
+| autonomy_level | AutonomyLevel | 自治级别 |
+| cycle_outcome | CycleOutcome | 最终结果 |
+| source_strategy_instance_id | str | 触发策略实例 |
+| triggered_by | str | 触发来源 |
+| agent_task_id | str(FK) | 驱动的AgentTask |
+| created_at | datetime | 创建时间 |
+| completed_at | datetime | 完成时间 |
+
+## 7.12 FactorDiscovery
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| factor_discovery_id | str(PK) | 发现唯一标识 |
+| research_cycle_id | str(FK) | 所属循环 |
+| research_project_id | str(FK) | 所属项目 |
+| factor_names_json | str(JSON array) | 因子名称列表 |
+| factor_combination | str | 因子组合描述 |
+| discovery_type | str | 发现类型 |
+| hypothesis_id | str(FK) | 源假设 |
+| trial_plan_id | str(FK) | 验证试验 |
+| metric_value | float | 指标值 |
+| adjusted_alpha | float | 调整后alpha |
+| is_significant | bool | 是否显著 |
+| confidence | float | 置信度 |
+| market_regime | str | 适用制度 |
+| instrument_scope_json | str(JSON array) | 适用标的 |
+| status | FactorDiscoveryStatus | 状态 |
+| created_at | datetime | 创建时间 |
+
+## 7.13 StrategyCandidate
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| strategy_candidate_id | str(PK) | 候选唯一标识 |
+| research_cycle_id | str(FK) | 所属循环 |
+| factor_discovery_ids_json | str(JSON array) | 源因子发现 |
+| source_factors_json | str(JSON array) | 源因子名称 |
+| strategy_template_name | str | 策略模板名 |
+| strategy_params_json | str(JSON) | 策略参数 |
+| param_ranges_json | str(JSON) | 参数搜索范围 |
+| ai_rationale | str | AI推理理由 |
+| status | StrategyCandidateStatus | 状态 |
+| backtest_sharpe | float | 回测Sharpe |
+| backtest_return | float | 回测收益 |
+| backtest_drawdown | float | 回测回撤 |
+| evaluation_score | float | 评估分数 |
+| evaluation_verdict | str | 评估结论 |
+| created_at | datetime | 创建时间 |
+
 ---
 
 # 8. 状态权威模型
@@ -1019,6 +1082,132 @@ Agent 访问数据必须遵守：
 4. 不得读取非必要 Live 敏感信息
 5. 不得对 Live DB 发起大范围分析查询
 6. Agent 报告必须引用数据版本和查询时间
+
+---
+
+## 10.5 因子研究工作流架构（FR-RES-006~013）
+
+### 10.5.1 ResearchProject 生命周期状态机
+
+```
+CREATED → EXPLORING → HYPOTHESIZING → DESIGNING → EXECUTING → VALIDATING → REPORTING → COMPLETED
+   │          │            │              │            │             │             │
+   └ CANCELED └ CANCELED  └ CANCELED    └ CANCELED  └ CANCELED   └ CANCELED   └ FAILED
+                                                             │
+                                                             └→ EXECUTING (rollback)
+```
+
+终端状态：COMPLETED, FAILED, CANCELED
+
+实现：`src/hqmts/statemachine/research_project_fsm.py`
+
+### 10.5.2 Research Agent 工具集
+
+| 类别 | 工具 | 允许环境 |
+|------|------|----------|
+| READ_ONLY | `query_factor_library`, `query_factor_values`, `query_factor_correlations`, `query_market_regime`, `query_factor_anomalies`, `query_instrument_universe` | Research/Backtest/Paper |
+| TASK_TRIGGER | `create_hypothesis`, `create_trial_plan`, `execute_trial`, `generate_research_report` | Research/Backtest |
+| CONTROLLED_OPERATION | `propose_factor_registration` | Research/Backtest |
+
+实现：`src/hqmts/agent/types.py` (RESEARCH_READ_ONLY_TOOLS, RESEARCH_TASK_TRIGGER_TOOLS, RESEARCH_CONTROLLED_TOOLS)
+
+### 10.5.3 项目级多重检验治理
+
+每个 ResearchProject 拥有独立的 MultipleTestingGovernance 实例，试验预算隔离。Bonferroni/BH 校正应用于项目内所有试验。
+
+实现：`src/hqmts/research/orchestrator.py` (_governance_sessions 缓存)
+
+### 10.5.4 数据流
+
+```
+Scope → Hypothesis → TrialPlan → Execution → Validation → Report
+  │          │            │           │            │           │
+  └─ instruments    └─ prediction  └─ pre-reg   └─ metrics  └─ provenance
+     factors           factors        threshold     adjusted     chain
+     time_range        confidence     train/test    alpha
+```
+
+### 10.5.5 领域模型
+
+- **ResearchProject** (`src/hqmts/domain/research_project.py`): 核心编排器，6阶段状态，链接假设和试验
+- **Hypothesis** (`src/hqmts/domain/hypothesis.py`): 结构化假设，含预测、因子、预期效应、置信度
+- **TrialPlan** (`src/hqmts/domain/trial_plan.py`): 预注册试验计划，含因子组合、训练/测试分割、治理校正
+- **TrialResult** (`src/hqmts/domain/trial_plan.py`): 试验执行结果，含显著性判定
+
+### 10.5.6 编排服务
+
+`ResearchOrchestrator` (`src/hqmts/research/orchestrator.py`): 核心服务，管理项目 CRUD、阶段推进、假设管理、试验计划执行。
+
+### 10.5.7 AI 集成
+
+`FactorResearchAI` (`src/hqmts/research/ai_assistant.py`): 每阶段 prompt builder，支持 6 种结构化输出标签。
+
+`build_research_project_prompt` (`src/hqmts/llm/context_builder.py`): 项目感知系统 prompt，根据当前阶段和研究模式动态调整。
+
+### 10.5.8 API 端点
+
+23 个端点（10 个原有 + 13 个新增），详见 PRD 12.7。
+
+## 10.6 自主研发循环数据表
+
+### research_cycles 表
+- research_cycle_id TEXT PRIMARY KEY
+- title TEXT NOT NULL
+- opportunity_type TEXT NOT NULL
+- opportunity_signal_json TEXT
+- status TEXT NOT NULL
+- research_project_id TEXT REFERENCES research_projects(research_project_id)
+- budget_json TEXT
+- budget_consumed_json TEXT
+- factor_discovery_ids_json TEXT
+- strategy_candidate_ids_json TEXT
+- autonomy_level TEXT DEFAULT 'level_2'
+- cycle_outcome TEXT
+- outcome_reason TEXT
+- source_strategy_instance_id TEXT
+- triggered_by TEXT
+- agent_task_id TEXT
+- created_at TIMESTAMP DEFAULT NOW()
+- completed_at TIMESTAMP
+
+### factor_discoveries 表
+- factor_discovery_id TEXT PRIMARY KEY
+- research_cycle_id TEXT REFERENCES research_cycles(research_cycle_id)
+- research_project_id TEXT REFERENCES research_projects(research_project_id)
+- factor_names_json TEXT
+- factor_combination TEXT
+- discovery_type TEXT
+- description TEXT
+- hypothesis_id TEXT REFERENCES hypotheses(hypothesis_id)
+- trial_plan_id TEXT
+- metric_value REAL
+- adjusted_alpha REAL
+- is_significant BOOLEAN
+- confidence REAL
+- market_regime TEXT
+- instrument_scope_json TEXT
+- status TEXT DEFAULT 'candidate'
+- created_at TIMESTAMP DEFAULT NOW()
+
+### strategy_candidates 表
+- strategy_candidate_id TEXT PRIMARY KEY
+- research_cycle_id TEXT REFERENCES research_cycles(research_cycle_id)
+- factor_discovery_ids_json TEXT
+- source_factors_json TEXT
+- strategy_template_name TEXT
+- strategy_params_json TEXT
+- param_ranges_json TEXT
+- ai_rationale TEXT
+- signal_logic_description TEXT
+- status TEXT DEFAULT 'generated'
+- backtest_result_ref TEXT
+- backtest_sharpe REAL
+- backtest_return REAL
+- backtest_drawdown REAL
+- backtest_trades INTEGER
+- evaluation_score REAL
+- evaluation_verdict TEXT
+- created_at TIMESTAMP DEFAULT NOW()
 
 ---
 
@@ -1507,6 +1696,27 @@ Agent 角色：
 2. 审批必须绑定审批快照
 3. 审批通过不等于执行成功
 4. 执行结果必须由 ControlledExecution 记录
+
+## ResearchCycle 状态机
+
+转换规则：
+- OPPORTUNITY_IDENTIFIED → RESEARCHING：创建 ResearchProject 并推进到 EXPLORING
+- RESEARCHING → FACTOR_VALIDATED：项目完成6阶段，至少1个显著因子
+- RESEARCHING → RESEARCHING：继续研究（新假设、新试验）
+- FACTOR_VALIDATED → SYNTHESIZING：调用策略合成
+- SYNTHESIZING → BACKTESTING：至少1个策略候选生成
+- BACKTESTING → EVALUATING：所有候选回测完成
+- EVALUATING → PROMOTED：至少1个候选达标
+- EVALUATING → ARCHIVED：无候选达标
+- EVALUATING → RE_RESEARCH：需要重新研究
+- RE_RESEARCH → RESEARCHING：重新开始研究
+- 任意活跃状态 → CANCELED / FAILED
+- PROMOTED / ARCHIVED / CANCELED / FAILED 为终端状态
+
+前置条件：
+- RESEARCHING → FACTOR_VALIDATED：需要 ≥1 个 is_significant=true 的 FactorDiscovery
+- SYNTHESIZING → BACKTESTING：需要 ≥1 个 status=generated 的 StrategyCandidate
+- EVALUATING → PROMOTED：需要 ≥1 个 evaluation_verdict=promote 的候选
 
 ---
 
@@ -2059,6 +2269,12 @@ Hermes Agent 不是：
 
 并且仅限分析和建议。
 
+Strategy Design Agent（激活）：
+- 消费 FactorDiscovery，合成 StrategyCandidate
+- 选择策略模板、生成参数建议
+- 执行参数扫描、评估候选
+- 受回测预算约束
+
 ---
 
 ## 24.3 Tool Gateway
@@ -2247,6 +2463,95 @@ Agent 上下文必须遵守：
 4. 不跨环境复用未授权 memory
 5. Agent memory 不得作为事实源
 6. Prompt / workflow version 必须可追踪
+
+## 24.10 自主研究循环架构
+
+### 24.10.1 循环控制器
+
+AutonomousResearchLoop 是驱动 ResearchCycle 的核心服务：
+- 它本身是一个 AgentTask（role=RESEARCH）
+- 所有工具调用通过现有 ToolGateway → PolicyEngine 管线
+- 不绕过任何安全机制
+
+循环算法：
+1. 评估 ResearchCycle 当前状态
+2. 根据状态决定下一步动作（调用工具）
+3. 通过 ToolGateway 执行
+4. 若 MANUAL_REVIEW_REQUIRED：暂停，创建 ApprovalRequest
+5. 记录审计日志
+6. 检查预算约束
+7. 预算耗尽或超时：自动 ARCHIVED
+
+### 24.10.2 触发机制
+
+三种触发源创建新 ResearchCycle：
+1. 定时触发（每日收盘后扫描因子异常和制度变化）
+2. 反应式触发（策略绩效退化监控）
+3. 人工触发（UI 提交研究问题）
+
+### 24.10.3 因子→策略桥梁
+
+FactorStrategyBridgeService 将验证通过的因子发现翻译为策略候选：
+1. 因子模式 → 模板映射（趋势因子→趋势策略、动量+超买→均值回归等）
+2. 因子特征 → 参数建议（lookback窗口、止损水平、仓位权重）
+3. 定义参数搜索范围（中心值±50%，受 schema 约束）
+
+### 24.10.4 衰减监控
+
+FactorDecayMonitorService 定期检查已注册因子：
+- 因子值分布稳定性
+- 策略实际绩效 vs 因子预测
+- 制度变化导致因子失效
+- 检测到衰减时触发新 ResearchCycle
+
+### 24.10.5 LLM Prompt 架构
+
+自主研究使用工具调用式 prompt（非对话式）：
+- 输入：ResearchCycle 当前状态、预算、已有产出物、市场上下文
+- 输出：结构化 JSON 动作计划 [{tool, params, rationale}]
+- 阶段感知：不同状态使用不同上下文模板
+
+### 24.10.6 新增工具定义
+
+| 工具名 | 类别 | 说明 |
+|--------|------|------|
+| synthesize_strategy_candidates | TASK_TRIGGER | 从因子发现生成策略候选 |
+| evaluate_strategy_candidate | TASK_TRIGGER | 评估回测后的策略候选 |
+| propose_strategy_promotion | CONTROLLED_OPERATION | 提议策略部署到 Paper/Live |
+| detect_factor_decay | READ_ONLY | 检测已注册因子衰减 |
+
+### 24.10.7 数据流
+
+```
+市场数据 / 策略绩效
+  → 机会检测（AutonomousResearchLoop）
+  → ResearchCycle（OPPORTUNITY_IDENTIFIED）
+  → ResearchProject（6阶段因子研究，复用现有）
+  → FactorDiscovery（验证通过的因子发现）
+  → FactorStrategyBridgeService（策略合成）
+  → StrategyCandidate（带参数的策略候选）
+  → BacktestRunner（参数扫描，复用现有）
+  → 候选评估（composite score）
+  → Paper 部署（现有准入管线）
+  → Live 部署（人工审批，现有）
+  → 绩效监控（现有 metrics）
+  → 衰减检测 → 反馈到顶部
+```
+
+### 24.10.8 安全保障
+
+以下机制不变：
+- FORBIDDEN_TOOLS：Agent 不能直接下单、改DB、改风控
+- Live 部署必须人工审批（PolicyEngine 硬编码）
+- 因子注册必须人工审批（CONTROLLED_OPERATION）
+- Kill Switch 激活后所有非读操作被阻止
+- 完整审计链
+- 失败关闭原则
+
+新增保障：
+- 每循环预算硬限制（试验数、LLM调用数、回测数、执行时长）
+- 循环超时自动归档
+- Agent 异常行为检测（过多失败提案/策略违规→暂停循环→人工告警）
 
 ---
 

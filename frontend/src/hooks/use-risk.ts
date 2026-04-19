@@ -22,7 +22,7 @@ export function useRiskStatus() {
 export function useActivateKillSwitch() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => apiClient.post('/risk/kill-switch'),
+    mutationFn: (reason?: string) => apiClient.post('/risk/kill-switch', { reason: reason ?? '' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['risk'] })
     },
@@ -32,7 +32,7 @@ export function useActivateKillSwitch() {
 export function useDeactivateKillSwitch() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: () => apiClient.post('/risk/kill-switch/deactivate'),
+    mutationFn: (reason?: string) => apiClient.post('/risk/kill-switch/deactivate', { reason: reason ?? '' }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['risk'] })
     },

@@ -19,6 +19,6 @@ export interface Position {
 export function usePositions() {
   return useQuery({
     queryKey: ['positions'],
-    queryFn: () => apiClient.get<Position[]>('/api/positions'),
+    queryFn: () => apiClient.get<Position[]>('/account/positions'),
   })
 }

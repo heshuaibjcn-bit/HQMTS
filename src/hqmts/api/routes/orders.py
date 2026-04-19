@@ -3,14 +3,27 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hqmts.api.deps import get_db
+from hqmts.api.deps_auth import get_current_user
+from hqmts.core.enums import OrderStatus
+from hqmts.db.models.instrument import InstrumentORM
 from hqmts.db.models.order import OrderORM
 from hqmts.db.repositories.base import BaseRepository
 from hqmts.db.repositories.order_repo import OrderRepository
 
 router = APIRouter(prefix="/orders", tags=["orders"])
+
+# States from which cancellation is allowed
+_CANCELLABLE_STATUSES = {
+    OrderStatus.CREATED,
+    OrderStatus.PENDING_SUBMIT,
+    OrderStatus.SUBMITTED,
+    OrderStatus.ACCEPTED,
+    OrderStatus.PARTIAL_FILLED,
+}
 
 
 def _order_to_dict(o: OrderORM) -> dict:
@@ -50,7 +63,19 @@ async def list_orders(
         filters["status"] = status
     orders = await repo.get_many(filters=filters or None, limit=limit)
     total = await repo.count(filters=filters or None)
-    return {"orders": [_order_to_dict(o) for o in orders], "total": total}
+
+    result = []
+    for o in orders:
+        d = _order_to_dict(o)
+        # Enrich with instrument info
+        inst_stmt = select(InstrumentORM).where(InstrumentORM.instrument_id == o.instrument_id)
+        inst_result = await db.execute(inst_stmt)
+        inst = inst_result.scalar_one_or_none()
+        d["instrument_code"] = inst.symbol if inst else o.instrument_id
+        d["instrument_name"] = inst.name if inst else ""
+        d["direction"] = o.side
+        result.append(d)
+    return {"orders": result, "total": total}
 
 
 @router.get("/{order_id}")
@@ -61,3 +86,40 @@ async def get_order(order_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
     return _order_to_dict(order)
+
+
+@router.post("/{order_id}/cancel")
+async def cancel_order(
+    order_id: str,
+    db: AsyncSession = Depends(get_db),
+    user=Depends(get_current_user),
+) -> dict:
+    """Cancel a pending or submitted order (PRD FR-UI-003).
+
+    Only orders in cancellable states (created, pending_submit, pending,
+    submitted, accepted, partial_filled) can be cancelled.
+    """
+    repo = OrderRepository(db)
+    order = await repo.get_by_id(order_id, id_column="order_id")
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+
+    try:
+        current_status = OrderStatus(order.status)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown order status: {order.status}")
+
+    if current_status not in _CANCELLABLE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Order in status '{order.status}' cannot be cancelled. "
+            f"Cancellable: {[s.value for s in _CANCELLABLE_STATUSES]}",
+        )
+
+    order.status = OrderStatus.CANCELED.value
+    await db.commit()
+    await db.refresh(order)
+    return {
+        **_order_to_dict(order),
+        "cancelled_by": user.user_id,
+    }
